@@ -14,7 +14,7 @@ from operator_py.box_annotator_ohem import *
 from operator_py.rpn_inv_normalize import *
 from operator_py.tile_as import *
 
-class resnet_v1_101_flownet_rfcn(Symbol):
+class resnet_v1_101_flownet_deeplab(Symbol):
 
     def __init__(self):
         """
