@@ -16,19 +16,21 @@ import pprint
 import cv2
 from config.config import config, update_config
 from utils.image import resize, transform
+from PIL import Image
 import numpy as np
+
 # get config
 os.environ['PYTHONUNBUFFERED'] = '1'
 os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = '0'
 os.environ['MXNET_ENABLE_GPU_P2P'] = '0'
 cur_path = os.path.abspath(os.path.dirname(__file__))
-update_config(cur_path + '/../experiments/dff_rfcn/cfgs/dff_rfcn_vid_demo.yaml')
+update_config(cur_path + '/../experiments/dff_deeplab/cfgs/dff_deeplab_vid_demo.yaml')
 
 sys.path.insert(0, os.path.join(cur_path, '../external/mxnet', config.MXNET_VERSION))
 import mxnet as mx
-from core.tester import im_detect, Predictor
+from core.tester import im_segment, Predictor
 from symbols import *
-from utils.load_model import load_param
+from utils.load_model import load_param_multi
 from utils.show_boxes import show_boxes, draw_boxes
 from utils.tictoc import tic, toc
 from nms.nms import py_nms_wrapper, cpu_nms_wrapper, gpu_nms_wrapper
@@ -40,11 +42,61 @@ def parse_args():
 
 args = parse_args()
 
+def getpallete(num_cls):
+    """
+    this function is to get the colormap for visualizing the segmentation mask
+    :param num_cls: the number of visulized class
+    :return: the pallete
+    """
+    n = num_cls
+    pallete_raw = np.zeros((n, 3)).astype('uint8')
+    pallete = np.zeros((n, 3)).astype('uint8')
+
+    pallete_raw[6, :] =  [111,  74,   0]
+    pallete_raw[7, :] =  [ 81,   0,  81]
+    pallete_raw[8, :] =  [128,  64, 128]
+    pallete_raw[9, :] =  [244,  35, 232]
+    pallete_raw[10, :] =  [250, 170, 160]
+    pallete_raw[11, :] = [230, 150, 140]
+    pallete_raw[12, :] = [ 70,  70,  70]
+    pallete_raw[13, :] = [102, 102, 156]
+    pallete_raw[14, :] = [190, 153, 153]
+    pallete_raw[15, :] = [180, 165, 180]
+    pallete_raw[16, :] = [150, 100, 100]
+    pallete_raw[17, :] = [150, 120,  90]
+    pallete_raw[18, :] = [153, 153, 153]
+    pallete_raw[19, :] = [153, 153, 153]
+    pallete_raw[20, :] = [250, 170,  30]
+    pallete_raw[21, :] = [220, 220,   0]
+    pallete_raw[22, :] = [107, 142,  35]
+    pallete_raw[23, :] = [152, 251, 152]
+    pallete_raw[24, :] = [ 70, 130, 180]
+    pallete_raw[25, :] = [220,  20,  60]
+    pallete_raw[26, :] = [255,   0,   0]
+    pallete_raw[27, :] = [  0,   0, 142]
+    pallete_raw[28, :] = [  0,   0,  70]
+    pallete_raw[29, :] = [  0,  60, 100]
+    pallete_raw[30, :] = [  0,   0,  90]
+    pallete_raw[31, :] = [  0,   0, 110]
+    pallete_raw[32, :] = [  0,  80, 100]
+    pallete_raw[33, :] = [  0,   0, 230]
+    pallete_raw[34, :] = [119,  11,  32]
+
+    train2regular = [7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33]
+
+    for i in range(len(train2regular)):
+        pallete[i, :] = pallete_raw[train2regular[i]+1, :]
+
+    pallete = pallete.reshape(-1)
+
+    return pallete
+
 def main():
     # get symbol
     pprint.pprint(config)
     config.symbol = 'resnet_v1_101_flownet_deeplab'
-    model = '/../model/rfcn_dff_flownet_vid'
+    model1 = '/../model/rfcn_dff_flownet_vid'
+    model2 = '/../model/deeplab_cityscapes'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
     key_sym = sym_instance.get_key_test_symbol(config)
     cur_sym = sym_instance.get_cur_test_symbol(config)
@@ -61,8 +113,8 @@ def main():
                'whale', 'zebra']
 
     # load demo data
-    image_names = glob.glob(cur_path + '/../demo/ILSVRC2015_val_00007010/*.JPEG')
-    output_dir = cur_path + '/../demo/rfcn_dff/'
+    image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
+    output_dir = cur_path + '/../demo/deeplab_dff/'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     key_frame_interval = 10
@@ -85,14 +137,15 @@ def main():
 
 
     # get predictor
-    data_names = ['data', 'im_info', 'data_key', 'feat_key']
-    label_names = []
+    data_names = ['data', 'data_key', 'feat_key']
+    label_names = ['softmax_label']
     data = [[mx.nd.array(data[i][name]) for name in data_names] for i in xrange(len(data))]
     max_data_shape = [[('data', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
                        ('data_key', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),]]
     provide_data = [[(k, v.shape) for k, v in zip(data_names, data[i])] for i in xrange(len(data))]
     provide_label = [None for i in xrange(len(data))]
-    arg_params, aux_params = load_param(cur_path + model, 0, process=True)
+    # models: rfcn_dff_flownet_vid, deeplab_cityscapes
+    arg_params, aux_params = load_param_multi(cur_path + model1, cur_path + model2, 0, process=True)
     key_predictor = Predictor(key_sym, data_names, label_names,
                           context=[mx.gpu(0)], max_data_shapes=max_data_shape,
                           provide_data=provide_data, provide_label=provide_label,
@@ -110,11 +163,15 @@ def main():
                                      provide_label=[None])
         scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
         if j % key_frame_interval == 0:
-            scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
+            # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
+            output_all, feat = im_segment(key_predictor, data_batch)
+            output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
         else:
             data_batch.data[0][-1] = feat
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
-            scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
+            # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
+            output_all, _ = im_segment(cur_predictor, data_batch)
+            output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
 
     print "warmup done"
     # test
@@ -128,33 +185,27 @@ def main():
 
         tic()
         if idx % key_frame_interval == 0:
-            scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
+            # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
+            output_all, feat = im_segment(key_predictor, data_batch)
+            output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
         else:
             data_batch.data[0][-1] = feat
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
-            scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
+            # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
+            output_all, _ = im_segment(cur_predictor, data_batch)
+            output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
+
         time += toc()
         count += 1
         print 'testing {} {:.4f}s'.format(im_name, time/count)
 
-        boxes = boxes[0].astype('f')
-        scores = scores[0].astype('f')
-        dets_nms = []
-        for j in range(1, scores.shape[1]):
-            cls_scores = scores[:, j, np.newaxis]
-            cls_boxes = boxes[:, 4:8] if config.CLASS_AGNOSTIC else boxes[:, j * 4:(j + 1) * 4]
-            cls_dets = np.hstack((cls_boxes, cls_scores))
-            keep = nms(cls_dets)
-            cls_dets = cls_dets[keep, :]
-            cls_dets = cls_dets[cls_dets[:, -1] > 0.7, :]
-            dets_nms.append(cls_dets)
-        # visualize
-        im = cv2.imread(im_name)
-        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        # show_boxes(im, dets_nms, classes, 1)
-        out_im = draw_boxes(im, dets_nms, classes, 1)
+        segmentation_result = np.uint8(np.squeeze(output_all))
+        segmentation_result = Image.fromarray(segmentation_result)
+        pallete = getpallete(256)
+        segmentation_result.putpalette(pallete)
+        print 'testing {} {:.4f}s'.format(im_name, toc())
         _, filename = os.path.split(im_name)
-        cv2.imwrite(output_dir + filename,out_im)
+        segmentation_result.save(output_dir + '/seg_' + filename + '.png')
 
     print 'done'
 

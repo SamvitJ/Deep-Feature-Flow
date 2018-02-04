@@ -40,7 +40,7 @@ config.network.NORMALIZE_RPN = True
 config.network.ANCHOR_MEANS = (0.0, 0.0, 0.0, 0.0)
 config.network.ANCHOR_STDS = (0.1, 0.1, 0.4, 0.4)
 config.network.NUM_ANCHORS = len(config.network.ANCHOR_SCALES) * len(config.network.ANCHOR_RATIOS)
-config.network.DFF_FEAT_DIM = 1024
+config.network.DFF_FEAT_DIM = 2048
 
 # dataset related params
 config.dataset = edict()

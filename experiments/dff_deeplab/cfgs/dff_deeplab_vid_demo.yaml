@@ -4,8 +4,8 @@ output_path: "./output/dff_rfcn/imagenet_vid"
 gpus: '0'
 CLASS_AGNOSTIC: true
 SCALES:
-- 600
-- 1000
+- 1024
+- 2048
 default:
   frequent: 100
   kvstore: device
@@ -45,7 +45,7 @@ network:
   NORMALIZE_RPN: TRUE
   NUM_ANCHORS: 9
 dataset:
-  NUM_CLASSES: 31
+  NUM_CLASSES: 19
   dataset: ImageNetVID
   dataset_path: "./data/ILSVRC2015"
   image_set: DET_train_30classes+VID_train_15frames

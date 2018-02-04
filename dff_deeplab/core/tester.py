@@ -156,6 +156,20 @@ def im_detect(predictor, data_batch, data_names, scales, cfg):
     return scores_all, pred_boxes_all, data_dict_all, feat
 
 
+def im_segment(predictor, data_batch):
+    output_all = predictor.predict(data_batch)
+
+    for k,v in output_all[0].items():
+        print (k, v.shape)
+
+    if output_all[0].has_key('res5c_relu_output'):
+        feat = output_all[0]['res5c_relu_output']
+    else:
+        feat = None
+
+    return output_all, feat
+
+
 def im_batch_detect(predictor, data_batch, data_names, scales, cfg):
     output_all = predictor.predict(data_batch)
 
