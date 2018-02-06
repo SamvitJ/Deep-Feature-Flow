@@ -42,6 +42,23 @@ def parse_args():
 
 args = parse_args()
 
+def fast_hist(pred, label, n):
+    k = (label >= 0) & (label < n)
+    return np.bincount(
+        n * label[k].astype(int) + pred[k], minlength=n ** 2).reshape(n, n)
+
+def per_class_iu(hist):
+    return np.true_divide(np.diag(hist), (hist.sum(1) + hist.sum(0) - np.diag(hist)))
+
+def get_label_if_available(label_files, im_filename):
+    for lb_file in label_files:
+        _, lb_filename = os.path.split(lb_file)
+        lb_filename = lb_filename[:23]
+        if im_filename.startswith(lb_filename):
+            print 'label {}'.format(lb_filename)
+            return lb_file
+    return None
+
 def getpallete(num_cls):
     """
     this function is to get the colormap for visualizing the segmentation mask
@@ -101,19 +118,16 @@ def main():
     key_sym = sym_instance.get_key_test_symbol(config)
     cur_sym = sym_instance.get_cur_test_symbol(config)
 
-    # set up class names
-    num_classes = 31
-    classes = ['airplane', 'antelope', 'bear', 'bicycle',
-               'bird', 'bus', 'car', 'cattle',
-               'dog', 'domestic_cat', 'elephant', 'fox',
-               'giant_panda', 'hamster', 'horse', 'lion',
-               'lizard', 'monkey', 'motorcycle', 'rabbit',
-               'red_panda', 'sheep', 'snake', 'squirrel',
-               'tiger', 'train', 'turtle', 'watercraft',
-               'whale', 'zebra']
+    # settings
+    has_gt = True
+    num_classes = 19
 
     # load demo data
     image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
+    if has_gt:
+        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels/*.png'))
+    else:
+        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
     output_dir = cur_path + '/../demo/deeplab_dff/'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -177,6 +191,7 @@ def main():
     # test
     time = 0
     count = 0
+    hist = np.zeros((num_classes, num_classes))
     for idx, im_name in enumerate(image_names):
         data_batch = mx.io.DataBatch(data=[data[idx]], label=[], pad=0, index=idx,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[idx])]],
@@ -185,27 +200,51 @@ def main():
 
         tic()
         if idx % key_frame_interval == 0:
+            print '\nframe {} (key)'.format(idx)
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
         else:
+            print '\nframe {} (intermediate)'.format(idx)
             data_batch.data[0][-1] = feat
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, _ = im_segment(cur_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
 
-        time += toc()
+        elapsed = toc()
+        time += elapsed
         count += 1
-        print 'testing {} {:.4f}s'.format(im_name, time/count)
+        print 'testing {} {:.4f}s [{:.4f}s]'.format(im_name, elapsed, time/count)
 
-        segmentation_result = np.uint8(np.squeeze(output_all))
-        segmentation_result = Image.fromarray(segmentation_result)
+        pred = np.uint8(np.squeeze(output_all))
+        segmentation_result = Image.fromarray(pred)
         pallete = getpallete(256)
         segmentation_result.putpalette(pallete)
-        print 'testing {} {:.4f}s'.format(im_name, toc())
-        _, filename = os.path.split(im_name)
-        segmentation_result.save(output_dir + '/seg_' + filename + '.png')
+        _, im_filename = os.path.split(im_name)
+        segmentation_result.save(output_dir + '/seg_' + im_filename)
+
+        label = None
+        if has_gt:
+            lb_file = get_label_if_available(label_files, im_filename)
+            if lb_file:
+                label = np.array(Image.open(lb_file)).astype('int32')
+        else:
+            _, lb_filename = os.path.split(label_files[idx])
+            print 'label {}'.format(lb_filename[:27])
+            label = np.asarray(Image.open(label_files[idx]))
+
+        if label is not None:
+            curr_hist = fast_hist(pred.flatten(), label.flatten(), num_classes)
+            hist += curr_hist
+            print 'mIoU {mIoU:.3f}'.format(
+                mIoU=round(np.nanmean(per_class_iu(curr_hist)) * 100, 2))
+            print '(cum) mIoU {mIoU:.3f}'.format(
+                mIoU=round(np.nanmean(per_class_iu(hist)) * 100, 2))
+
+    ious = per_class_iu(hist) * 100
+    print ' '.join('{:.03f}'.format(i) for i in ious)
+    print '===> final mIoU {mIoU:.3f}'.format(mIoU=round(np.nanmean(ious), 2))
 
     print 'done'
 
