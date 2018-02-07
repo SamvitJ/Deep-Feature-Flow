@@ -35,8 +35,16 @@ from utils.show_boxes import show_boxes, draw_boxes
 from utils.tictoc import tic, toc
 from nms.nms import py_nms_wrapper, cpu_nms_wrapper, gpu_nms_wrapper
 
+ref_img_prefix = 'frankfurt_000000_000294'
+ref_pred_prefix = 'seg_frankfurt_000000_012000'
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Show Deep Feature Flow demo')
+    parser.add_argument('-i', '--interval', type=int, default=1)
+    parser.add_argument('-e', '--num_ex', type=int, default=10)
+    parser.add_argument('--gt', dest='has_gt', action='store_true')
+    parser.add_argument('--no_gt', dest='has_gt', action='store_false')
+    parser.set_defaults(has_gt=True)
     args = parser.parse_args()
     return args
 
@@ -53,7 +61,7 @@ def per_class_iu(hist):
 def get_label_if_available(label_files, im_filename):
     for lb_file in label_files:
         _, lb_filename = os.path.split(lb_file)
-        lb_filename = lb_filename[:23]
+        lb_filename = lb_filename[:len(ref_img_prefix)]
         if im_filename.startswith(lb_filename):
             print 'label {}'.format(lb_filename)
             return lb_file
@@ -119,19 +127,23 @@ def main():
     cur_sym = sym_instance.get_cur_test_symbol(config)
 
     # settings
-    has_gt = True
     num_classes = 19
+    has_gt = args.has_gt
+    interv = args.interval
+    num_ex = args.num_ex
 
     # load demo data
-    image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
     if has_gt:
-        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels/*.png'))
+        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_i' + str(interv) + '/*.png'))
+        image_names = image_names[: interv * num_ex]
+        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
     else:
+        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
     output_dir = cur_path + '/../demo/deeplab_dff/'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    key_frame_interval = 10
+    key_frame_interval = interv
 
     #
 
@@ -226,12 +238,17 @@ def main():
 
         label = None
         if has_gt:
-            lb_file = get_label_if_available(label_files, im_filename)
-            if lb_file:
-                label = np.array(Image.open(lb_file)).astype('int32')
+            # if annotation available for frame
+            if idx % interv == (interv - 1):
+                lb_idx = idx // interv
+                _, lb_filename = os.path.split(label_files[lb_idx])
+                print 'label {}'.format(lb_filename[:len(ref_img_prefix)])
+                if im_filename[:len(ref_img_prefix)] != lb_filename[:len(ref_img_prefix)]:
+                    sys.exit('image and label mismatched!')
+                label = np.asarray(Image.open(label_files[lb_idx]))
         else:
             _, lb_filename = os.path.split(label_files[idx])
-            print 'label {}'.format(lb_filename[:27])
+            print 'label {}'.format(lb_filename[:len(ref_pred_prefix)])
             label = np.asarray(Image.open(label_files[idx]))
 
         if label is not None:
