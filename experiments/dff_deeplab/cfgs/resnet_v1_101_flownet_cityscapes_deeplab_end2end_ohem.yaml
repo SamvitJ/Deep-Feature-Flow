@@ -10,8 +10,8 @@ default:
   frequent: 100
   kvstore: device
 network:
-  pretrained: "./model/deeplab_cityscapes"
-  pretrained_flow: "./model/pretrained_model/flownet"
+  pretrained: "./model/rfcn_dff_flownet_vid"
+  pretrained_flow: "./model/deeplab_cityscapes"
   pretrained_epoch: 0
   PIXEL_MEANS:
   - 103.06
