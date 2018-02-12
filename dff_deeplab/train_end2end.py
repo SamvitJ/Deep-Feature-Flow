@@ -41,10 +41,10 @@ import mxnet as mx
 
 from symbols import *
 from core import callback, metric
-from core.loader import AnchorLoader
+from core.loader import TrainDataLoader
 from core.module import MutableModule
 from utils.create_logger import create_logger
-from utils.load_data import load_gt_roidb, merge_roidb, filter_roidb
+from utils.load_data import load_gt_segdb, merge_segdb
 from utils.load_model import load_param
 from utils.PrefetchingIter import PrefetchingIter
 from utils.lr_scheduler import WarmupMultiFactorScheduler
@@ -58,7 +58,7 @@ def train_net(args, ctx, pretrained, pretrained_flow, epoch, prefix, begin_epoch
     shutil.copy2(os.path.join(curr_path, 'symbols', config.symbol + '.py'), final_output_path)
     sym_instance = eval(config.symbol + '.' + config.symbol)()
     sym = sym_instance.get_train_symbol(config)
-    feat_sym = sym.get_internals()['rpn_cls_score_output']
+    # feat_sym = sym.get_internals()['rpn_cls_score_output']
 
     # setup multi-gpu
     batch_size = len(ctx)
@@ -70,24 +70,25 @@ def train_net(args, ctx, pretrained, pretrained_flow, epoch, prefix, begin_epoch
 
     # load dataset and prepare imdb for training
     image_sets = [iset for iset in config.dataset.image_set.split('+')]
-    roidbs = [load_gt_roidb(config.dataset.dataset, image_set, config.dataset.root_path, config.dataset.dataset_path,
-                            flip=config.TRAIN.FLIP)
+    segdbs = [load_gt_segdb(config.dataset.dataset, image_set, config.dataset.root_path, config.dataset.dataset_path,
+                            result_path=final_output_path, flip=config.TRAIN.FLIP)
               for image_set in image_sets]
-    roidb = merge_roidb(roidbs)
-    roidb = filter_roidb(roidb, config)
+    segdb = merge_segdb(segdbs)
+
     # load training data
-    train_data = AnchorLoader(feat_sym, roidb, config, batch_size=input_batch_size, shuffle=config.TRAIN.SHUFFLE, ctx=ctx,
-                              feat_stride=config.network.RPN_FEAT_STRIDE, anchor_scales=config.network.ANCHOR_SCALES,
-                              anchor_ratios=config.network.ANCHOR_RATIOS, aspect_grouping=config.TRAIN.ASPECT_GROUPING,
-                              normalize_target=config.network.NORMALIZE_RPN, bbox_mean=config.network.ANCHOR_MEANS,
-                              bbox_std=config.network.ANCHOR_STDS)
+    # train_data = AnchorLoader(feat_sym, roidb, config, batch_size=input_batch_size, shuffle=config.TRAIN.SHUFFLE, ctx=ctx,
+    #                           feat_stride=config.network.RPN_FEAT_STRIDE, anchor_scales=config.network.ANCHOR_SCALES,
+    #                           anchor_ratios=config.network.ANCHOR_RATIOS, aspect_grouping=config.TRAIN.ASPECT_GROUPING,
+    #                           normalize_target=config.network.NORMALIZE_RPN, bbox_mean=config.network.ANCHOR_MEANS,
+    #                           bbox_std=config.network.ANCHOR_STDS)
+    train_data = TrainDataLoader(sym, segdb, config, batch_size=input_batch_size, crop_height=config.TRAIN.CROP_HEIGHT, crop_width=config.TRAIN.CROP_WIDTH,
+                                 shuffle=config.TRAIN.SHUFFLE, ctx=ctx)
 
     # infer max shape
-    max_data_shape = [('data', (config.TRAIN.BATCH_IMAGES, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
-                      ('data_ref', (config.TRAIN.BATCH_IMAGES, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
-                      ('eq_flag', (1,))]
+    max_data_shape = [('data', (config.TRAIN.BATCH_IMAGES, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES])))]
+                      # ('data_ref', (config.TRAIN.BATCH_IMAGES, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
+                      # ('eq_flag', (1,))]
     max_data_shape, max_label_shape = train_data.infer_shape(max_data_shape)
-    max_data_shape.append(('gt_boxes', (config.TRAIN.BATCH_IMAGES, 100, 5)))
     print 'providing maximum shape', max_data_shape, max_label_shape
 
     data_shape_dict = dict(train_data.provide_data_single + train_data.provide_label_single)
@@ -99,6 +100,7 @@ def train_net(args, ctx, pretrained, pretrained_flow, epoch, prefix, begin_epoch
         print('continue training from ', begin_epoch)
         arg_params, aux_params = load_param(prefix, begin_epoch, convert=True)
     else:
+        print pretrained
         arg_params, aux_params = load_param(pretrained, epoch, convert=True)
         arg_params_flow, aux_params_flow = load_param(pretrained_flow, epoch, convert=True)
         arg_params.update(arg_params_flow)
@@ -122,30 +124,35 @@ def train_net(args, ctx, pretrained, pretrained_flow, epoch, prefix, begin_epoch
 
     # decide training params
     # metric
-    rpn_eval_metric = metric.RPNAccMetric()
-    rpn_cls_metric = metric.RPNLogLossMetric()
-    rpn_bbox_metric = metric.RPNL1LossMetric()
-    eval_metric = metric.RCNNAccMetric(config)
-    cls_metric = metric.RCNNLogLossMetric(config)
-    bbox_metric = metric.RCNNL1LossMetric(config)
+    # rpn_eval_metric = metric.RPNAccMetric()
+    # rpn_cls_metric = metric.RPNLogLossMetric()
+    # rpn_bbox_metric = metric.RPNL1LossMetric()
+    # eval_metric = metric.RCNNAccMetric(config)
+    # cls_metric = metric.RCNNLogLossMetric(config)
+    # bbox_metric = metric.RCNNL1LossMetric(config)
+    # eval_metrics = mx.metric.CompositeEvalMetric()
+    fcn_loss_metric = metric.FCNLogLossMetric(config.default.frequent * batch_size)
     eval_metrics = mx.metric.CompositeEvalMetric()
+
     # rpn_eval_metric, rpn_cls_metric, rpn_bbox_metric, eval_metric, cls_metric, bbox_metric
-    for child_metric in [rpn_eval_metric, rpn_cls_metric, rpn_bbox_metric, eval_metric, cls_metric, bbox_metric]:
+    for child_metric in [fcn_loss_metric]:
         eval_metrics.add(child_metric)
+
     # callback
     batch_end_callback = callback.Speedometer(train_data.batch_size, frequent=args.frequent)
-    means = np.tile(np.array(config.TRAIN.BBOX_MEANS), 2 if config.CLASS_AGNOSTIC else config.dataset.NUM_CLASSES)
-    stds = np.tile(np.array(config.TRAIN.BBOX_STDS), 2 if config.CLASS_AGNOSTIC else config.dataset.NUM_CLASSES)
-    epoch_end_callback = [mx.callback.module_checkpoint(mod, prefix, period=1, save_optimizer_states=True), callback.do_checkpoint(prefix, means, stds)]
+    epoch_end_callback = mx.callback.module_checkpoint(mod, prefix, period=1, save_optimizer_states=True)
+
     # decide learning rate
     base_lr = lr
-    lr_factor = config.TRAIN.lr_factor
+    lr_factor = 0.1
     lr_epoch = [float(epoch) for epoch in lr_step.split(',')]
     lr_epoch_diff = [epoch - begin_epoch for epoch in lr_epoch if epoch > begin_epoch]
     lr = base_lr * (lr_factor ** (len(lr_epoch) - len(lr_epoch_diff)))
-    lr_iters = [int(epoch * len(roidb) / batch_size) for epoch in lr_epoch_diff]
-    print('lr', lr, 'lr_epoch_diff', lr_epoch_diff, 'lr_iters', lr_iters)
+    lr_iters = [int(epoch * len(segdb) / batch_size) for epoch in lr_epoch_diff]
+    print 'lr', lr, 'lr_epoch_diff', lr_epoch_diff, 'lr_iters', lr_iters
+
     lr_scheduler = WarmupMultiFactorScheduler(lr_iters, lr_factor, config.TRAIN.warmup, config.TRAIN.warmup_lr, config.TRAIN.warmup_step)
+
     # optimizer
     optimizer_params = {'momentum': config.TRAIN.momentum,
                         'wd': config.TRAIN.wd,
