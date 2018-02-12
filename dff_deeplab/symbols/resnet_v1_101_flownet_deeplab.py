@@ -547,16 +547,15 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         data = mx.sym.Variable(name="data")
         data_ref = mx.sym.Variable(name="data_ref")
         eq_flag = mx.sym.Variable(name="eq_flag")
-        # im_info = mx.sym.Variable(name="im_info")
         seg_cls_gt = mx.symbol.Variable(name='label')
 
         # shared convolutional layers
-        conv_feat = self.get_resnet_v1(data)
-        # flow, scale_map = self.get_flownet(data, data_ref)
-        # flow_grid = mx.sym.GridGenerator(data=flow, transform_type='warp', name='flow_grid')
-        # warp_conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid, name='warping_feat')
+        conv_feat = self.get_resnet_v1(data_ref)
+        flow, scale_map = self.get_flownet(data, data_ref)
+        flow_grid = mx.sym.GridGenerator(data=flow, transform_type='warp', name='flow_grid')
+        warp_conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid, name='warping_feat')
         # warp_conv_feat = warp_conv_feat * scale_map
-        # select_conv_feat = mx.sym.take(mx.sym.Concat(*[warp_conv_feat, conv_feat], dim=0), eq_flag)
+        select_conv_feat = mx.sym.take(mx.sym.Concat(*[warp_conv_feat, conv_feat], dim=0), eq_flag)
 
         # conv_feats = mx.sym.SliceChannel(select_conv_feat, axis=1, num_outputs=2)
 
@@ -564,7 +563,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
         fc6_weight = mx.symbol.Variable('fc6_weight', lr_mult=1.0)
 
-        fc6 = mx.symbol.Convolution(data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6",
+        fc6 = mx.symbol.Convolution(data=select_conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6",
                                     bias=fc6_bias, weight=fc6_weight, workspace=self.workspace)
         relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='relu_fc6')
 
