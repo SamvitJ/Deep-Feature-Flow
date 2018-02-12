@@ -545,8 +545,8 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         num_classes = cfg.dataset.NUM_CLASSES
 
         data = mx.sym.Variable(name="data")
-        # data_ref = mx.sym.Variable(name="data_ref")
-        # eq_flag = mx.sym.Variable(name="eq_flag")
+        data_ref = mx.sym.Variable(name="data_ref")
+        eq_flag = mx.sym.Variable(name="eq_flag")
         # im_info = mx.sym.Variable(name="im_info")
         seg_cls_gt = mx.symbol.Variable(name='label')
 
@@ -582,7 +582,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         softmax = mx.symbol.SoftmaxOutput(data=croped_score, label=seg_cls_gt, normalization='valid', multi_output=True,
                                           use_ignore=True, ignore_label=255, name="softmax")
 
-        group = mx.sym.Group([softmax])
+        group = mx.sym.Group([softmax, data_ref, eq_flag])
         self.sym = group
         return group
 

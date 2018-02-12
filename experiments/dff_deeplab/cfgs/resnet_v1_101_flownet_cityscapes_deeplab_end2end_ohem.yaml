@@ -54,9 +54,11 @@ TRAIN:
   lr_step: '40.336'
   model_prefix: "dff_deeplab_vid"
   # whether flip image
-  FLIP: true
+  FLIP: false
   # size of images for each device
   BATCH_IMAGES: 1
+  # e2e changes behavior of anchor loader and metric
+  END2END: true
   # wheter crop image during training
   ENABLE_CROP: True
   # scale of cropped image during training
