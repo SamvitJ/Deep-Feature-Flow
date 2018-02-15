@@ -164,7 +164,7 @@ def main():
 
     # get predictor
     data_names = ['data', 'data_key', 'feat_key']
-    label_names = ['softmax_label']
+    label_names = []
     data = [[mx.nd.array(data[i][name]) for name in data_names] for i in xrange(len(data))]
     max_data_shape = [[('data', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
                        ('data_key', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),]]
@@ -191,13 +191,13 @@ def main():
         if j % key_frame_interval == 0:
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
         else:
             data_batch.data[0][-1] = feat
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, _ = im_segment(cur_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
     print "warmup done"
     # test
@@ -215,14 +215,14 @@ def main():
             print '\nframe {} (key)'.format(idx)
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
         else:
             print '\nframe {} (intermediate)'.format(idx)
             data_batch.data[0][-1] = feat
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, _ = im_segment(cur_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['softmax_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
         elapsed = toc()
         time += elapsed

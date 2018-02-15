@@ -621,10 +621,10 @@ class resnet_v1_101_flownet_deeplab(Symbol):
 
         croped_score = mx.symbol.Crop(*[upsampling, data], offset=(8, 8), name='croped_score')
 
-        softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
-                                          ignore_label=255, name="softmax")
+        # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
+        #                                   ignore_label=255, name="softmax")
 
-        group = mx.sym.Group([data_key, feat_key, conv_feat, softmax])
+        group = mx.sym.Group([data_key, feat_key, conv_feat, croped_score])
         self.sym = group
         return group
 
@@ -673,10 +673,10 @@ class resnet_v1_101_flownet_deeplab(Symbol):
 
         croped_score = mx.symbol.Crop(*[upsampling, data_cur], offset=(8, 8), name='croped_score')
 
-        softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
-                                          ignore_label=255, name="softmax")
+        # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
+        #                                   ignore_label=255, name="softmax")
 
-        group = mx.sym.Group([data_key, conv_feat, softmax])
+        group = mx.sym.Group([data_key, conv_feat, croped_score])
         self.sym = group
         return group
 
