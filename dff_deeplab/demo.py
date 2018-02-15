@@ -18,6 +18,7 @@ from config.config import config, update_config
 from utils.image import resize, transform
 from PIL import Image
 import numpy as np
+import pickle
 
 # get config
 os.environ['PYTHONUNBUFFERED'] = '1'
@@ -133,14 +134,16 @@ def main():
     num_ex = args.num_ex
 
     # load demo data
+    istr = 'i' + str(interv)
     if has_gt:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_i' + str(interv) + '/*.png'))
+        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_' + istr + '/*.png'))
         image_names = image_names[: interv * num_ex]
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
     else:
         image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
     output_dir = cur_path + '/../demo/deeplab_dff/'
+    mv_file = cur_path + '/../demo/cityscapes_frankfurt_all_' + istr + '/frankfurt-' + istr + '.pkl'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     key_frame_interval = interv
@@ -149,6 +152,10 @@ def main():
 
     data = []
     key_im_tensor = None
+    mv_tensor = None
+    mvs = pickle.load(open(mv_file, 'rb'))
+    mvs = np.transpose(mvs, (0, 3, 1, 2))
+    print "mvs.shape %s" % (mvs.shape,)
     for idx, im_name in enumerate(image_names):
         assert os.path.exists(im_name), ('%s does not exist'.format(im_name))
         im = cv2.imread(im_name, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
@@ -159,11 +166,12 @@ def main():
         im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
         if idx % key_frame_interval == 0:
             key_im_tensor = im_tensor
-        data.append({'data': im_tensor, 'im_info': im_info, 'data_key': key_im_tensor, 'feat_key': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
+        mv_tensor = np.negative(np.expand_dims(mvs[idx], axis=0) / 16.)
+        data.append({'data': im_tensor, 'im_info': im_info, 'm_vec': mv_tensor, 'data_key': key_im_tensor, 'feat_prev': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
 
 
     # get predictor
-    data_names = ['data', 'data_key', 'feat_key']
+    data_names = ['data', 'm_vec', 'data_key', 'feat_prev']
     label_names = []
     data = [[mx.nd.array(data[i][name]) for name in data_names] for i in xrange(len(data))]
     max_data_shape = [[('data', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
@@ -187,16 +195,16 @@ def main():
         data_batch = mx.io.DataBatch(data=[data[j]], label=[], pad=0, index=0,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[j])]],
                                      provide_label=[None])
-        scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
+        # scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
         if j % key_frame_interval == 0:
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
         else:
             data_batch.data[0][-1] = feat
-            data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
+            data_batch.provide_data[0][-1] = ('feat_prev', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
-            output_all, _ = im_segment(cur_predictor, data_batch)
+            output_all, feat = im_segment(cur_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
     print "warmup done"
@@ -208,7 +216,7 @@ def main():
         data_batch = mx.io.DataBatch(data=[data[idx]], label=[], pad=0, index=idx,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[idx])]],
                                      provide_label=[None])
-        scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
+        # scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
 
         tic()
         if idx % key_frame_interval == 0:
@@ -219,9 +227,9 @@ def main():
         else:
             print '\nframe {} (intermediate)'.format(idx)
             data_batch.data[0][-1] = feat
-            data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
+            data_batch.provide_data[0][-1] = ('feat_prev', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
-            output_all, _ = im_segment(cur_predictor, data_batch)
+            output_all, feat = im_segment(cur_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
         elapsed = toc()
