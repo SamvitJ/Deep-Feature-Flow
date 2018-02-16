@@ -125,25 +125,27 @@ def main():
     model2 = '/../model/deeplab_cityscapes'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
     key_sym = sym_instance.get_key_test_symbol(config)
+    next_key_sym = sym_instance.get_key_test_symbol(config)
     cur_sym = sym_instance.get_cur_test_symbol(config)
 
     # settings
     num_classes = 19
     has_gt = args.has_gt
-    interv = args.interval
+    interv = 3
     num_ex = args.num_ex
 
     # load demo data
-    istr = 'i' + str(interv)
+    cstr = 'c' + str(interv)
     if has_gt:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_' + istr + '/*.png'))
+        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_' + cstr + '/*.png'))
         image_names = image_names[: interv * num_ex]
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
+        label_files = label_files[: num_ex]
     else:
         image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
     output_dir = cur_path + '/../demo/deeplab_dff/'
-    mv_file = cur_path + '/../demo/cityscapes_frankfurt_all_' + istr + '/frankfurt-' + istr + '.pkl'
+    mv_file = cur_path + '/../demo/cityscapes_frankfurt_all_' + cstr + '/frankfurt-' + cstr + '.pkl'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     key_frame_interval = interv
@@ -152,7 +154,8 @@ def main():
 
     data = []
     key_im_tensor = None
-    mv_tensor = None
+    mv_prev_tensor = None
+    mv_next_tensor = None
     mvs = pickle.load(open(mv_file, 'rb'))
     mvs = np.transpose(mvs, (0, 3, 1, 2))
     print "mvs.shape %s" % (mvs.shape,)
@@ -166,21 +169,34 @@ def main():
         im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
         if idx % key_frame_interval == 0:
             key_im_tensor = im_tensor
-        mv_tensor = np.negative(np.expand_dims(mvs[idx], axis=0) / 16.)
-        data.append({'data': im_tensor, 'im_info': im_info, 'm_vec': mv_tensor, 'data_key': key_im_tensor, 'feat_prev': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
+        mv_prev_tensor = np.negative(np.expand_dims(mvs[idx], axis=0) / 16.)
+        mv_next_tensor = np.expand_dims(mvs[idx + 1], axis=0) / 16.
+        if idx + 1 > len(image_names):
+            mv_next_tensor = mv_prev_tensor
+        data.append({
+            'data': im_tensor,
+            'im_info': im_info,
+            'm_vec_prev': mv_prev_tensor,
+            'm_vec_next': mv_next_tensor,
+            'feat_prev': np.zeros((1,config.network.DFF_FEAT_DIM,1,1)),
+            'feat_next': np.zeros((1,config.network.DFF_FEAT_DIM,1,1)),
+        })
 
 
     # get predictor
-    data_names = ['data', 'm_vec', 'data_key', 'feat_prev']
+    data_names = ['data', 'm_vec_prev', 'm_vec_next', 'feat_prev', 'feat_next']
     label_names = []
     data = [[mx.nd.array(data[i][name]) for name in data_names] for i in xrange(len(data))]
-    max_data_shape = [[('data', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
-                       ('data_key', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),]]
+    max_data_shape = [[('data', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES])))]]
     provide_data = [[(k, v.shape) for k, v in zip(data_names, data[i])] for i in xrange(len(data))]
     provide_label = [None for i in xrange(len(data))]
     # models: rfcn_dff_flownet_vid, deeplab_cityscapes
     arg_params, aux_params = load_param_multi(cur_path + model1, cur_path + model2, 0, process=True)
     key_predictor = Predictor(key_sym, data_names, label_names,
+                          context=[mx.gpu(0)], max_data_shapes=max_data_shape,
+                          provide_data=provide_data, provide_label=provide_label,
+                          arg_params=arg_params, aux_params=aux_params)
+    next_key_predictor = Predictor(next_key_sym, data_names, label_names,
                           context=[mx.gpu(0)], max_data_shapes=max_data_shape,
                           provide_data=provide_data, provide_label=provide_label,
                           arg_params=arg_params, aux_params=aux_params)
@@ -195,16 +211,25 @@ def main():
         data_batch = mx.io.DataBatch(data=[data[j]], label=[], pad=0, index=0,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[j])]],
                                      provide_label=[None])
+        next_idx = j + key_frame_interval - 1 if j + key_frame_interval <= len(image_names) else j
+        data_batch_next = mx.io.DataBatch(data=[data[next_idx]], label=[], pad=0, index=next_idx,
+                                          provide_data=[[(k, v.shape) for k, v in zip(data_names, data[next_idx])]],
+                                          provide_label=[None])
         # scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
         if j % key_frame_interval == 0:
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
+
+            data_next = data[next_idx][0]
+            _, feat_next = im_segment(next_key_predictor, data_batch_next)
         else:
-            data_batch.data[0][-1] = feat
-            data_batch.provide_data[0][-1] = ('feat_prev', feat.shape)
+            data_batch.data[0][-2] = feat
+            data_batch.provide_data[0][-2] = ('feat_prev', feat.shape)
+            data_batch.data[0][-1] = feat_next
+            data_batch.provide_data[0][-1] = ('feat_next', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
-            output_all, feat = im_segment(cur_predictor, data_batch)
+            output_all, _ = im_segment(cur_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
     print "warmup done"
@@ -212,24 +237,34 @@ def main():
     time = 0
     count = 0
     hist = np.zeros((num_classes, num_classes))
+    lb_idx = 0
     for idx, im_name in enumerate(image_names):
         data_batch = mx.io.DataBatch(data=[data[idx]], label=[], pad=0, index=idx,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[idx])]],
                                      provide_label=[None])
+        next_idx = idx + key_frame_interval - 1 if idx + key_frame_interval <= len(image_names) else idx
+        data_batch_next = mx.io.DataBatch(data=[data[next_idx]], label=[], pad=0, index=next_idx,
+                                          provide_data=[[(k, v.shape) for k, v in zip(data_names, data[next_idx])]],
+                                          provide_label=[None])
         # scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
 
         tic()
         if idx % key_frame_interval == 0:
-            print '\nframe {} (key)'.format(idx)
+            print '\n\nframe {} (key)     next {}'.format(idx, next_idx)
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
+
+            data_next = data[next_idx][0]
+            _, feat_next = im_segment(next_key_predictor, data_batch_next)
         else:
             print '\nframe {} (intermediate)'.format(idx)
-            data_batch.data[0][-1] = feat
-            data_batch.provide_data[0][-1] = ('feat_prev', feat.shape)
+            data_batch.data[0][-2] = feat
+            data_batch.provide_data[0][-2] = ('feat_prev', feat.shape)
+            data_batch.data[0][-1] = feat_next
+            data_batch.provide_data[0][-1] = ('feat_next', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
-            output_all, feat = im_segment(cur_predictor, data_batch)
+            output_all, _ = im_segment(cur_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
         elapsed = toc()
@@ -247,13 +282,12 @@ def main():
         label = None
         if has_gt:
             # if annotation available for frame
-            if idx % interv == (interv - 1):
-                lb_idx = idx // interv
-                _, lb_filename = os.path.split(label_files[lb_idx])
+            _, lb_filename = os.path.split(label_files[lb_idx])
+            if im_filename[:len(ref_img_prefix)] == lb_filename[:len(ref_img_prefix)]:
                 print 'label {}'.format(lb_filename[:len(ref_img_prefix)])
-                if im_filename[:len(ref_img_prefix)] != lb_filename[:len(ref_img_prefix)]:
-                    sys.exit('image and label mismatched!')
                 label = np.asarray(Image.open(label_files[lb_idx]))
+                if lb_idx < len(label_files) - 1:
+                    lb_idx += 1
         else:
             _, lb_filename = os.path.split(label_files[idx])
             print 'label {}'.format(lb_filename[:len(ref_pred_prefix)])
