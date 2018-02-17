@@ -131,7 +131,7 @@ def main():
     # settings
     num_classes = 19
     has_gt = args.has_gt
-    interv = 3
+    interv = args.interval
     num_ex = args.num_ex
 
     # load demo data
@@ -154,8 +154,7 @@ def main():
 
     data = []
     key_im_tensor = None
-    mv_prev_tensor = None
-    mv_next_tensor = None
+    mv_tensor = None
     mvs = pickle.load(open(mv_file, 'rb'))
     mvs = np.transpose(mvs, (0, 3, 1, 2))
     print "mvs.shape %s" % (mvs.shape,)
@@ -169,22 +168,18 @@ def main():
         im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
         if idx % key_frame_interval == 0:
             key_im_tensor = im_tensor
-        mv_prev_tensor = np.negative(np.expand_dims(mvs[idx], axis=0) / 16.)
-        mv_next_tensor = np.expand_dims(mvs[idx + 1], axis=0) / 16.
-        if idx + 1 > len(image_names):
-            mv_next_tensor = mv_prev_tensor
+        mv_tensor = np.expand_dims(mvs[idx], axis=0) / 16.
         data.append({
             'data': im_tensor,
             'im_info': im_info,
-            'm_vec_prev': mv_prev_tensor,
-            'm_vec_next': mv_next_tensor,
-            'feat_prev': np.zeros((1,config.network.DFF_FEAT_DIM,1,1)),
-            'feat_next': np.zeros((1,config.network.DFF_FEAT_DIM,1,1)),
+            'm_vec': mv_tensor,
+            'feat_forw': np.zeros((1,config.network.DFF_FEAT_DIM,1,1)),
+            'feat_back': np.zeros((1,config.network.DFF_FEAT_DIM,1,1)),
         })
 
 
     # get predictor
-    data_names = ['data', 'm_vec_prev', 'm_vec_next', 'feat_prev', 'feat_next']
+    data_names = ['data', 'm_vec', 'feat_forw', 'feat_back']
     label_names = []
     data = [[mx.nd.array(data[i][name]) for name in data_names] for i in xrange(len(data))]
     max_data_shape = [[('data', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES])))]]
@@ -221,13 +216,12 @@ def main():
             output_all, feat = im_segment(key_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
-            data_next = data[next_idx][0]
             _, feat_next = im_segment(next_key_predictor, data_batch_next)
         else:
             data_batch.data[0][-2] = feat
-            data_batch.provide_data[0][-2] = ('feat_prev', feat.shape)
+            data_batch.provide_data[0][-2] = ('feat_forw', feat.shape)
             data_batch.data[0][-1] = feat_next
-            data_batch.provide_data[0][-1] = ('feat_next', feat.shape)
+            data_batch.provide_data[0][-1] = ('feat_back', feat_next.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, _ = im_segment(cur_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
@@ -255,14 +249,51 @@ def main():
             output_all, feat = im_segment(key_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
-            data_next = data[next_idx][0]
             _, feat_next = im_segment(next_key_predictor, data_batch_next)
+
+            forw_warp = [feat]
+            for i in range(key_frame_interval - 1):
+                feat_sym = mx.sym.Variable(name="feat")
+                m_vec_sym = mx.sym.Variable(name="m_vec")
+
+                m_vec_grid = mx.sym.GridGenerator(data=m_vec_sym, transform_type='warp', name='m_vec_grid')
+                feat_warp = mx.sym.BilinearSampler(data=feat_sym, grid=m_vec_grid, name='warping_feat')
+
+                m_vec_data = mx.ndarray.negative(data[idx + 1 + i][1])
+                f_exec = feat_warp.bind(ctx=mx.gpu(),
+                    args={"feat": forw_warp[-1], "m_vec": m_vec_data},
+                    group2ctx={"feat": mx.gpu(), "m_vec": mx.cpu()})
+                f_exec.forward()
+                forw_warp.append(f_exec.outputs[0])
+            # print 'forw_warp: ', len(forw_warp)
+
+            back_warp = [feat_next]
+            for i in range(key_frame_interval - 1):
+                feat_sym = mx.sym.Variable(name="feat")
+                m_vec_sym = mx.sym.Variable(name="m_vec")
+
+                m_vec_grid = mx.sym.GridGenerator(data=m_vec_sym, transform_type='warp', name='m_vec_grid')
+                feat_warp = mx.sym.BilinearSampler(data=feat_sym, grid=m_vec_grid, name='warping_feat')
+
+                m_vec_data = data[idx + (key_frame_interval - 1 - i)][1]
+                b_exec = feat_warp.bind(ctx=mx.gpu(),
+                    args={"feat": back_warp[-1], "m_vec": m_vec_data},
+                    group2ctx={"feat": mx.gpu(), "m_vec": mx.cpu()})
+                b_exec.forward()
+                back_warp.append(b_exec.outputs[0])
+            back_warp.reverse()
+            # print 'back_warp: ', len(back_warp)
+
         else:
             print '\nframe {} (intermediate)'.format(idx)
-            data_batch.data[0][-2] = feat
-            data_batch.provide_data[0][-2] = ('feat_prev', feat.shape)
-            data_batch.data[0][-1] = feat_next
-            data_batch.provide_data[0][-1] = ('feat_next', feat.shape)
+            print 'modulo {}'.format(idx % key_frame_interval)
+            feat_forw = forw_warp[idx % key_frame_interval]
+            feat_back = back_warp[idx % key_frame_interval]
+
+            data_batch.data[0][-2] = feat_forw
+            data_batch.provide_data[0][-2] = ('feat_forw', feat_forw.shape)
+            data_batch.data[0][-1] = feat_back
+            data_batch.provide_data[0][-1] = ('feat_back', feat_back.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, _ = im_segment(cur_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
