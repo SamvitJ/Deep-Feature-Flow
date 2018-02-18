@@ -637,7 +637,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         feat_back = mx.sym.Variable(name="feat_back")
 
         # shared convolutional layers
-        conv_feat = (feat_forw + feat_back) / 2.
+        conv_feat = (feat_forw + feat_back)
         # mx.sym.maximum(feat_forw, feat_back)
 
         # deeplab
