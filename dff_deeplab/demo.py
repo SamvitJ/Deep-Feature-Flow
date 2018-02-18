@@ -166,15 +166,16 @@ def main():
     for snip_idx in range(len(image_names) / snip_len):
 
         label_idx = 19
-        offset = label_idx - (interv)/2
+        offset = snip_idx % interv # rotate offsets in [0, interv - 1]
+        start_pos = label_idx - offset
         snip_names = image_names[snip_idx * snip_len: (snip_idx + 1) * snip_len]
-        snip_names = snip_names[offset: offset + interv + 1]
+        snip_names = snip_names[start_pos: start_pos + interv + 1]
 
         #
         data = []
         mv_tensor = None
 
-        print '\n\nsnippet', snip_idx
+        print '\n\nsnippet', snip_idx, 'offset', offset
         for idx, im_name in enumerate(snip_names):
             assert os.path.exists(im_name), ('%s does not exist'.format(im_name))
             im = cv2.imread(im_name, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
@@ -183,7 +184,7 @@ def main():
             im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
             im_tensor = transform(im, config.network.PIXEL_MEANS)
             im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
-            mv_tensor = np.expand_dims(mvs[(snip_idx * snip_len) + offset + idx], axis=0) / 16.
+            mv_tensor = np.expand_dims(mvs[(snip_idx * snip_len) + start_pos + idx], axis=0) / 16.
             data.append({
                 'data': im_tensor,
                 'im_info': im_info,
@@ -221,26 +222,17 @@ def main():
                                          provide_data=[[(k, v.shape) for k, v in zip(data_names, data[j])]],
                                          provide_label=[None])
 
-            # load next keyframe data
-            if j % key_frame_interval == 0:
-                assert (j + key_frame_interval < len(snip_names))
-                next_idx = j + key_frame_interval
-                data_batch_next = mx.io.DataBatch(data=[data[next_idx]], label=[], pad=0, index=next_idx,
-                                                  provide_data=[[(k, v.shape) for k, v in zip(data_names, data[next_idx])]],
-                                                  provide_label=[None])
-
             # scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
             if j % key_frame_interval == 0:
                 # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
                 output_all, feat = im_segment(key_predictor, data_batch)
                 output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
-                _, feat_next = im_segment(next_key_predictor, data_batch_next)
             else:
                 data_batch.data[0][-2] = feat
                 data_batch.provide_data[0][-2] = ('feat_forw', feat.shape)
-                data_batch.data[0][-1] = feat_next
-                data_batch.provide_data[0][-1] = ('feat_back', feat_next.shape)
+                data_batch.data[0][-1] = feat
+                data_batch.provide_data[0][-1] = ('feat_back', feat.shape)
                 # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
                 output_all, _ = im_segment(cur_predictor, data_batch)
                 output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
@@ -317,7 +309,7 @@ def main():
 
             else:
                 print '\nframe {} (intermediate)'.format(idx)
-                print 'modulo {}'.format(idx % key_frame_interval)
+                # print 'modulo {}'.format(idx % key_frame_interval)
                 feat_forw = forw_warp[idx % key_frame_interval]
                 feat_back = back_warp[idx % key_frame_interval]
 
