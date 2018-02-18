@@ -152,11 +152,12 @@ def main():
     time = 0
     count = 0
     hist = np.zeros((num_classes, num_classes))
+    lb_idx = 0
 
     for snip_idx in range(len(image_names) / snip_len):
 
         label_idx = 19
-        offset = interv - 1
+        offset = snip_idx % interv
         start_pos = label_idx - offset
         snip_names = image_names[snip_idx * snip_len: (snip_idx + 1) * snip_len]
         snip_names = snip_names[start_pos: start_pos + interv]
@@ -252,12 +253,12 @@ def main():
             label = None
             if has_gt:
                 # if annotation available for frame
-                if idx % interv == (interv - 1):
-                    _, lb_filename = os.path.split(label_files[snip_idx])
+                _, lb_filename = os.path.split(label_files[lb_idx])
+                if im_filename[:len(ref_img_prefix)] == lb_filename[:len(ref_img_prefix)]:
                     print 'label {}'.format(lb_filename[:len(ref_img_prefix)])
-                    if im_filename[:len(ref_img_prefix)] != lb_filename[:len(ref_img_prefix)]:
-                        sys.exit('image and label mismatched!')
-                    label = np.asarray(Image.open(label_files[snip_idx]))
+                    label = np.asarray(Image.open(label_files[lb_idx]))
+                    if lb_idx < len(label_files) - 1:
+                        lb_idx += 1
             else:
                 _, lb_filename = os.path.split(label_files[idx])
                 print 'label {}'.format(lb_filename[:len(ref_pred_prefix)])
