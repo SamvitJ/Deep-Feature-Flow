@@ -4,8 +4,8 @@ output_path: "./output/dff_deeplab/cityscapes"
 symbol: resnet_v1_101_flownet_deeplab
 gpus: '0,1,2,3'
 SCALES:
+- 512
 - 1024
-- 2048
 default:
   frequent: 100
   kvstore: device
@@ -62,7 +62,7 @@ TRAIN:
   # wheter crop image during training
   ENABLE_CROP: True
   # scale of cropped image during training
-  CROP_HEIGHT: 768
+  CROP_HEIGHT: 512
   CROP_WIDTH: 1024
   # whether resume training
   RESUME: false

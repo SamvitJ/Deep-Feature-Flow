@@ -4,6 +4,7 @@ import cv2
 import random
 from PIL import Image
 from bbox.bbox_transform import clip_boxes
+import pickle
 
 
 # TODO: This two functions should be merged with individual data loader
@@ -39,7 +40,7 @@ def get_image(roidb, config):
         processed_roidb.append(new_rec)
     return processed_ims, processed_roidb
 
-def get_ref_im(seg_rec, config):
+def get_ref_im(seg_rec, config, offset):
 
     eq_flag = 0 # 0 for unequal, 1 for equal
 
@@ -53,13 +54,12 @@ def get_ref_im(seg_rec, config):
         suffix = seg_rec['image'][-len('000019_leftImg8bit.png'):]
 
     frame_id = int(suffix[:len('000019')])
-    ref_id = max(frame_id + np.random.randint(config.TRAIN.MIN_OFFSET, config.TRAIN.MAX_OFFSET+1), 0)
+    ref_id = frame_id + offset
+    # max(frame_id + np.random.randint(config.TRAIN.MIN_OFFSET, config.TRAIN.MAX_OFFSET+1), 0)
     # print 'frame id: {}\n ref id: {}'.format(frame_id, ref_id)
 
     prefix = prefix[len('./data/cityscapes/leftImg8bit/'):]
     ref_im_name = '/city/leftImg8bit_sequence/' + prefix + ('%06d' % ref_id) + '_leftImg8bit.png'
-    # print seg_rec['image']
-    # print ref_im_name
 
     # read ref image
     if not os.path.exists(ref_im_name):
@@ -72,6 +72,18 @@ def get_ref_im(seg_rec, config):
 
     return ref_im, eq_flag
 
+def get_mv_data(seg_rec):
+    dirname, fname = os.path.split(seg_rec['image'])
+
+    prefix = dirname[len('./data/cityscapes/leftImg8bit/'):]
+    fname_root = fname[:-len('_leftImg8bit.png')]
+
+    pkl_fpath = '/city/leftImg8bit_sequence/' + prefix + '/mv-data/' + fname_root + '.pkl'
+    # print seg_rec['image'], pkl_fpath
+
+    assert os.path.exists(pkl_fpath), '%s does not exist'.format(pkl_fpath)
+    return pickle.load(open(pkl_fpath, 'rb'))
+
 def get_segmentation_pair(segdb, config):
     """
     propocess image and return segdb
@@ -80,8 +92,9 @@ def get_segmentation_pair(segdb, config):
     """
     num_images = len(segdb)
     assert num_images > 0, 'No images'
-    processed_ims = []
-    processed_ref_ims = []
+    processed_mvs = []
+    processed_ref_prev_ims = []
+    processed_ref_next_ims = []
     processed_eq_flags = []
     processed_segdb = []
     processed_seg_cls_gt = []
@@ -89,21 +102,45 @@ def get_segmentation_pair(segdb, config):
         seg_rec = segdb[i]
 
         assert os.path.exists(seg_rec['image']), '%s does not exist'.format(seg_rec['image'])
-        im = np.array(cv2.imread(seg_rec['image']))
+        # im = np.array(cv2.imread(seg_rec['image']))
 
         assert not seg_rec['flipped']
-        ref_im, eq_flag = get_ref_im(seg_rec, config)
+        eq_flag = 0
+        ref_im_left, _ = get_ref_im(seg_rec, config, -1)
+        ref_im_right, _ = get_ref_im(seg_rec, config, 1)
+
+        mvs = get_mv_data(seg_rec)
+        mvs = np.transpose(mvs, (0, 3, 1, 2))
+        # print "mvs.shape %s" % (mvs.shape,)
+
+        prev_mv = np.expand_dims(mvs[1], axis=0)
+        next_mv = np.expand_dims(mvs[2], axis=0)
+
+        prev_mv = np.negative(prev_mv / 16.)
+        next_mv = next_mv / 16.
+        # print prev_mv
+        # print next_mv
+
+        mv_tensor = np.concatenate((prev_mv, next_mv), axis=0)
+        # print "mv_tensor.shape %s" % (mv_tensor.shape,)
+
+        mv_tensor = np.zeros((2, 2, 32, 64))
 
         new_rec = seg_rec.copy()
         scale_ind = random.randrange(len(config.SCALES))
         target_size = config.SCALES[scale_ind][0]
         max_size = config.SCALES[scale_ind][1]
 
-        im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
-        ref_im, ref_im_scale = resize(ref_im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
-        im_tensor = transform(im, config.network.PIXEL_MEANS)
-        ref_im_tensor = transform(ref_im, config.network.PIXEL_MEANS)
-        im_info = [im_tensor.shape[2], im_tensor.shape[3], im_scale]
+        # im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        ref_im_left, im_scale = resize(ref_im_left, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        ref_im_right, _ = resize(ref_im_right, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+
+        # im_tensor = transform(im, config.network.PIXEL_MEANS)
+        ref_im_l_tensor = transform(ref_im_left, config.network.PIXEL_MEANS)
+        ref_im_r_tensor = transform(ref_im_right, config.network.PIXEL_MEANS)
+        # ref_im_tensor = np.concatenate((ref_im_l_tensor, ref_im_r_tensor), axis=0)
+
+        im_info = [ref_im_l_tensor.shape[2], ref_im_l_tensor.shape[3], im_scale]
         new_rec['im_info'] = im_info
 
         seg_cls_gt = np.array(Image.open(seg_rec['seg_cls_path']))
@@ -111,13 +148,14 @@ def get_segmentation_pair(segdb, config):
             seg_cls_gt, target_size, max_size, stride=config.network.IMAGE_STRIDE, interpolation=cv2.INTER_NEAREST)
         seg_cls_gt_tensor = transform_seg_gt(seg_cls_gt)
 
-        processed_ims.append(im_tensor)
-        processed_ref_ims.append(ref_im_tensor)
+        processed_mvs.append(mv_tensor)
+        processed_ref_prev_ims.append(ref_im_l_tensor)
+        processed_ref_next_ims.append(ref_im_r_tensor)
         processed_eq_flags.append(eq_flag)
         processed_segdb.append(new_rec)
         processed_seg_cls_gt.append(seg_cls_gt_tensor)
 
-    return processed_ims, processed_ref_ims, processed_eq_flags, processed_seg_cls_gt, processed_segdb
+    return processed_mvs, processed_ref_prev_ims, processed_ref_next_ims, processed_eq_flags, processed_seg_cls_gt, processed_segdb
 
 def get_pair_image(roidb, config):
     """

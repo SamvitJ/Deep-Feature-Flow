@@ -63,7 +63,7 @@ class TrainDataLoader(mx.io.DataIter):
 
         # decide data and label names
         if config.TRAIN.END2END:
-            self.data_name = ['data', 'data_ref', 'eq_flag']
+            self.data_name = ['data', 'data_ref_prev', 'data_ref_next', 'eq_flag']
         else:
             self.data_name = ['data']
         self.label_name = ['label']
@@ -168,8 +168,9 @@ def parfetch(config, crop_width, crop_height, isegdb):
     # get testing data for multigpu
     data, label = get_segmentation_train_batch(isegdb, config)
     if config.TRAIN.ENABLE_CROP:
-        data_internal = data['data']
-        data_ref_internal = data['data_ref']
+        # data_internal = data['data']
+        data_internal = data['data_ref_prev']
+        data_next_internal = data['data_ref_next']
         label_internal = label['label']
 
         sx = math.floor(random.random() * (data_internal.shape[3] - crop_width + 1))
@@ -183,14 +184,16 @@ def parfetch(config, crop_width, crop_height, isegdb):
         ey = (int)(sy + crop_height - 1)
 
         data_internal = data_internal[:, :, sy : ey + 1, sx : ex + 1]
-        data_ref_internal = data_ref_internal[:, :, sy : ey + 1, sx : ex + 1]
+        data_next_internal = data_next_internal[:, :, sy : ey + 1, sx : ex + 1]
         label_internal = label_internal[:, :, sy : ey + 1, sx : ex + 1]
 
-        data['data'] = data_internal
-        data['data_ref'] = data_ref_internal
+        # data['data'] = data_internal
+        data['data_ref_prev'] = data_internal
+        data['data_ref_next'] = data_next_internal
         label['label'] = label_internal
-        assert (data['data'].shape[2] == crop_height) and (data['data'].shape[3] == crop_width)
-        assert (data['data_ref'].shape[2] == crop_height) and (data['data_ref'].shape[3] == crop_width)
+        # assert (data['data'].shape[2] == crop_height) and (data['data'].shape[3] == crop_width)
+        assert (data['data_ref_prev'].shape[2] == crop_height) and (data['data_ref_prev'].shape[3] == crop_width)
+        assert (data['data_ref_next'].shape[2] == crop_height) and (data['data_ref_next'].shape[3] == crop_width)
         assert (label['label'].shape[2] == crop_height) and (label['label'].shape[3] == crop_width)
 
     return {'data': data, 'label': label}

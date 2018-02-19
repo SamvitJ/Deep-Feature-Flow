@@ -37,16 +37,18 @@ def get_segmentation_train_batch(segdb, config):
     # assert len(segdb) == 1, 'Single batch only'
     assert len(segdb) == 1, 'Single batch only'
 
-    imgs, ref_imgs, eq_flags, seg_cls_gts, segdb = get_segmentation_pair(segdb, config)
-    im_array = imgs[0]
-    ref_im_array = ref_imgs[0]
+    mvs, ref_prev_imgs, ref_next_imgs, eq_flags, seg_cls_gts, segdb = get_segmentation_pair(segdb, config)
+    mv_array = mvs[0]
+    ref_prev_im_array = ref_prev_imgs[0]
+    ref_next_im_array = ref_next_imgs[0]
     eq_flag_array = np.array([eq_flags[0],], dtype=np.float32)
     seg_cls_gt = seg_cls_gts[0]
 
     im_info = np.array([segdb[0]['im_info']], dtype=np.float32)
 
-    data = {'data': im_array,
-            'data_ref': ref_im_array,
+    data = {'data': mv_array,
+            'data_ref_prev': ref_prev_im_array,
+            'data_ref_next': ref_next_im_array,
             'eq_flag': eq_flag_array,
             'im_info': im_info}
     label = {'label': seg_cls_gt}
