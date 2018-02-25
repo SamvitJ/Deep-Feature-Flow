@@ -124,7 +124,7 @@ def get_segmentation_pair(segdb, config):
         mv_tensor = np.concatenate((prev_mv, next_mv), axis=0)
         # print "mv_tensor.shape %s" % (mv_tensor.shape,)
 
-        mv_tensor = np.zeros((2, 2, 32, 64))
+        mv_tensor = np.zeros((2, 2, 48, 64))
 
         new_rec = seg_rec.copy()
         scale_ind = random.randrange(len(config.SCALES))
