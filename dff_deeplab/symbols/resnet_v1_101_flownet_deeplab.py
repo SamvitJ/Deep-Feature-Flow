@@ -26,8 +26,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         self.units = (3, 4, 23, 3) # use for 101
         self.filter_list = [256, 512, 1024, 2048]
 
-    def get_resnet_v1(self, data1, data2):
-        data = mx.symbol.Concat(data1, data2, dim=0)
+    def get_resnet_v1(self, data):
         conv1 = mx.symbol.Convolution(name='conv1', data=data , num_filter=64, pad=(3,3), kernel=(7,7), stride=(2,2), no_bias=True)
         bn_conv1 = mx.symbol.BatchNorm(name='bn_conv1', data=conv1 , use_global_stats=self.use_global_stats, eps=self.eps, fix_gamma=False)
         scale_conv1 = bn_conv1
@@ -547,7 +546,8 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         seg_cls_gt = mx.symbol.Variable(name='label')
 
         # shared convolutional layers
-        conv_feat = self.get_resnet_v1(data_ref_prev, data_ref_next)
+        data_concat = mx.symbol.Concat(data_ref_prev, data_ref_next, dim=0)
+        conv_feat = self.get_resnet_v1(data_concat)
 
         conv_split = mx.sym.split(conv_feat, axis=0, num_outputs=2)
         conv_l_feat = conv_split[0]
@@ -563,24 +563,26 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         m_vec_r_grid = mx.sym.GridGenerator(data=m_vec_r, transform_type='warp', name='flow_grid')
         warp_conv_r_feat = mx.sym.BilinearSampler(data=conv_r_feat, grid=m_vec_r_grid, name='warping_feat')
 
-        warp_conv = (warp_conv_l_feat + warp_conv_r_feat) / 2.
+        # warp_conv = (warp_conv_l_feat + warp_conv_r_feat) / 2.
+        warp_conv = mx.symbol.Concat(warp_conv_l_feat, warp_conv_r_feat, dim=1)
 
-        # warp_conv = mx.symbol.Concat(warp_conv_l_feat, warp_conv_r_feat, dim=1)
-        # warp_conv = mx.symbol.Concat(conv_l_feat, conv_r_feat, dim=1)
+        arg_shapes, out_shapes, _ = warp_conv.infer_shape(data=(2L, 2L, 64L, 128L),
+            data_ref_prev=(1L, 3L, 1024L, 2048L), data_ref_next=(1L, 3L, 1024L, 2048L))
+        print out_shapes
 
-        # # fusion layer
-        # fuse_bias = mx.symbol.Variable('fuse_bias', lr_mult=2.0)
-        # fuse_weight = mx.symbol.Variable('fuse_weight', lr_mult=1.0)
+        # fusion layer
+        fuse_bias = mx.symbol.Variable('fuse_bias', lr_mult=2.0)
+        fuse_weight = mx.symbol.Variable('fuse_weight', lr_mult=1.0)
 
-        # fuse = mx.symbol.Convolution(data=, kernel=(1, 1), pad=(0, 0), num_filter=2048, name="fuse",
-        #                              bias=fuse_bias, weight=fuse_weight, workspace=self.workspace)
-        # relu_fuse = mx.sym.Activation(data=fuse, act_type='relu', name='relu_fuse')
+        fuse = mx.symbol.Convolution(data=warp_conv, kernel=(1, 1), pad=(0, 0), num_filter=2048, name="fuse",
+                                     bias=fuse_bias, weight=fuse_weight, workspace=self.workspace)
+        relu_fuse = mx.sym.Activation(data=fuse, act_type='relu', name='relu_fuse')
 
         # subsequent fc layers by haozhi
         fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
         fc6_weight = mx.symbol.Variable('fc6_weight', lr_mult=1.0)
 
-        fc6 = mx.symbol.Convolution(data=warp_conv, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6",
+        fc6 = mx.symbol.Convolution(data=relu_fuse, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6",
                                     bias=fc6_bias, weight=fc6_weight, workspace=self.workspace)
         relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='relu_fc6')
 

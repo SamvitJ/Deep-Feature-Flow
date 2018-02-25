@@ -60,7 +60,7 @@ TRAIN:
   # e2e changes behavior of anchor loader and metric
   END2END: true
   # wheter crop image during training
-  ENABLE_CROP: True
+  ENABLE_CROP: False
   # scale of cropped image during training
   CROP_HEIGHT: 768
   CROP_WIDTH: 1024
