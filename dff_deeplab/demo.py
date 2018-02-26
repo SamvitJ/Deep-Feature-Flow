@@ -135,9 +135,14 @@ def main():
 
     # load demo data
     if has_gt:
-        image_names = sorted(glob.glob('/city/leftImg8bit_sequence/val/frankfurt/*.png'))
+        image_names  = sorted(glob.glob('/city/leftImg8bit_sequence/val/frankfurt/*.png'))
+        image_names += sorted(glob.glob('/city/leftImg8bit_sequence/val/lindau/*.png'))
+        image_names += sorted(glob.glob('/city/leftImg8bit_sequence/val/munster/*.png'))
         image_names = image_names[: snip_len * num_ex]
-        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
+        # label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
+        label_files  = sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/frankfurt/*trainIds.png'))
+        label_files += sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/lindau/*trainIds.png'))
+        label_files += sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/munster/*trainIds.png'))
     else:
         image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
@@ -254,8 +259,12 @@ def main():
             if has_gt:
                 # if annotation available for frame
                 _, lb_filename = os.path.split(label_files[lb_idx])
-                if im_filename[:len(ref_img_prefix)] == lb_filename[:len(ref_img_prefix)]:
-                    print 'label {}'.format(lb_filename[:len(ref_img_prefix)])
+                im_comps = im_filename.split('_')
+                lb_comps = lb_filename.split('_')
+                # print 'comp 1', im_comps[1], lb_comps[1]
+                # print 'comp 2', im_comps[2], lb_comps[2]
+                if im_comps[1] == lb_comps[1] and im_comps[2] == lb_comps[2]:
+                    print 'label {}'.format(lb_filename)
                     label = np.asarray(Image.open(label_files[lb_idx]))
                     if lb_idx < len(label_files) - 1:
                         lb_idx += 1
