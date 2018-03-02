@@ -138,15 +138,22 @@ def main():
     # load demo data
     cstr = 'c' + str(interv)
     if has_gt:
-        image_names = sorted(glob.glob('/city/leftImg8bit_sequence/val/frankfurt/*.png'))
+        image_names  = sorted(glob.glob('/city/leftImg8bit_sequence/val/frankfurt/*.png'))
+        image_names += sorted(glob.glob('/city/leftImg8bit_sequence/val/lindau/*.png'))
+        image_names += sorted(glob.glob('/city/leftImg8bit_sequence/val/munster/*.png'))
         image_names = image_names[: snip_len * num_ex]
-        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
+        # label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
+        label_files  = sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/frankfurt/*trainIds.png'))
+        label_files += sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/lindau/*trainIds.png'))
+        label_files += sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/munster/*trainIds.png'))
         label_files = label_files[: num_ex]
     else:
         image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
     output_dir = cur_path + '/../demo/deeplab_dff/'
-    mv_file = '/city/leftImg8bit_sequence/val/frankfurt-all.pkl'
+    mv_files = ['/city/leftImg8bit_sequence/val/frankfurt-all.pkl',
+        '/city/leftImg8bit_sequence/val/lindau-all.pkl',
+        '/city/leftImg8bit_sequence/val/munster-all.pkl']
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     key_frame_interval = interv
@@ -159,14 +166,20 @@ def main():
 
     print 'num snippets', (len(image_names) / snip_len)
 
-    mvs = pickle.load(open(mv_file, 'rb'))
-    mvs = np.transpose(mvs, (0, 3, 1, 2))
-    print "mvs.shape %s" % (mvs.shape,)
+    for idx, mv_file in enumerate(mv_files):
+        print 'mv file:', mv_file
+        mv_city = pickle.load(open(mv_file, 'rb'))
+        mv_city = np.transpose(mv_city, (0, 3, 1, 2))
+        if idx == 0:
+            mvs = mv_city
+        else:
+            mvs = np.concatenate((mvs, mv_city), axis=0)
+        print "mvs.shape %s" % (mvs.shape,)
 
     for snip_idx in range(len(image_names) / snip_len):
 
         label_idx = 19
-        offset = snip_idx % interv # rotate offsets in [0, interv - 1]
+        offset = snip_idx % interv # rotate offsets in [0, interv - 1] # (interv + (snip_idx % 2)) / 2
         start_pos = label_idx - offset
         snip_names = image_names[snip_idx * snip_len: (snip_idx + 1) * snip_len]
         snip_names = snip_names[start_pos: start_pos + interv + 1]
@@ -337,8 +350,10 @@ def main():
             if has_gt:
                 # if annotation available for frame
                 _, lb_filename = os.path.split(label_files[lb_idx])
-                if im_filename[:len(ref_img_prefix)] == lb_filename[:len(ref_img_prefix)]:
-                    print 'label {}'.format(lb_filename[:len(ref_img_prefix)])
+                im_comps = im_filename.split('_')
+                lb_comps = lb_filename.split('_')
+                if im_comps[1] == lb_comps[1] and im_comps[2] == lb_comps[2]:
+                    print 'label {}'.format(lb_filename)
                     label = np.asarray(Image.open(label_files[lb_idx]))
                     if lb_idx < len(label_files) - 1:
                         lb_idx += 1
