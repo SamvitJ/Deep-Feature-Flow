@@ -122,7 +122,7 @@ def main():
     pprint.pprint(config)
     config.symbol = 'resnet_v1_101_flownet_deeplab'
     model1 = '/../model/rfcn_dff_flownet_vid'
-    model2 = '/../model/deeplab_cityscapes'
+    model2 = '/../model/deeplab_dcn_cityscapes'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
     key_sym = sym_instance.get_key_test_symbol(config)
     next_key_sym = sym_instance.get_key_test_symbol(config)
