@@ -179,7 +179,7 @@ def main():
     for snip_idx in range(len(image_names) / snip_len):
 
         label_idx = 19
-        offset = snip_idx % interv # rotate offsets in [0, interv - 1] # (interv + (snip_idx % 2)) / 2
+        offset = (interv + (snip_idx % 2)) / 2 # rotate offsets in [0, interv - 1] # snip_idx % interv
         start_pos = label_idx - offset
         snip_names = image_names[snip_idx * snip_len: (snip_idx + 1) * snip_len]
         snip_names = snip_names[start_pos: start_pos + interv + 1]
