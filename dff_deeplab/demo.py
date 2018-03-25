@@ -45,7 +45,9 @@ def parse_args():
     parser.add_argument('-e', '--num_ex', type=int, default=10)
     parser.add_argument('--gt', dest='has_gt', action='store_true')
     parser.add_argument('--no_gt', dest='has_gt', action='store_false')
+    parser.add_argument('--diff', dest='diff', action='store_true')
     parser.set_defaults(has_gt=True)
+    parser.set_defaults(diff=False)
     args = parser.parse_args()
     return args
 
@@ -117,6 +119,42 @@ def getpallete(num_cls):
 
     return pallete
 
+def compare_imgs(curr_img, next_img):
+
+    # print curr_img
+    # print 'curr type', np.ndarray.dtype(curr_img)
+    # print 'next type', np.ndarray.dtype(next_img)
+
+    diff = next_img - curr_img
+    # print diff
+    print 'max', np.amax(curr_img), np.amax(next_img), np.amax(diff)
+    print 'min', np.amin(curr_img), np.amin(next_img), np.amin(diff)
+    print 'avg', np.mean(curr_img), np.mean(next_img), np.mean(abs(diff))
+
+    print np.shape(diff)
+    flat_diff = np.ravel(abs(diff))
+
+    def diff_greater(k, delta):
+        deltas = [delta[0][0], delta[0][1], delta[0][2]]
+        deltas = [np.ravel(d) for d in deltas]
+        fracs = [len(np.where(d > k)[0]) / (1. * np.size(d)) for d in deltas]
+        print fracs
+        return max(fracs)
+
+    # def diff_greater(k):
+    #     return len(np.where(flat_diff > k)[0]) / (1. * np.size(flat_diff))
+
+    print '0-norm', np.linalg.norm(flat_diff, ord=0) / (1. * np.size(flat_diff))
+    diff_0  = diff_greater(1e-5, abs(diff))
+    diff_5  = diff_greater(5, abs(diff))
+    diff_10 = diff_greater(10, abs(diff))
+
+    print 'diff >  0', diff_0
+    print 'diff >  5', diff_5
+    print 'diff > 10', diff_10
+
+    return diff_0, diff_5, diff_10
+
 def main():
     # get symbol
     pprint.pprint(config)
@@ -134,6 +172,7 @@ def main():
     has_gt = args.has_gt
     interv = args.interval
     num_ex = args.num_ex
+    comp_diff = args.diff
 
     # load demo data
     cstr = 'c' + str(interv)
@@ -163,6 +202,7 @@ def main():
     mvs = np.transpose(mvs, (0, 3, 1, 2))
     print "mvs.shape %s" % (mvs.shape,)
 
+    diff_0 = diff_5 = diff_10 = 0.
     for snip_idx in range(len(image_names) / snip_len):
 
         label_idx = 19
@@ -192,6 +232,67 @@ def main():
                 'feat_forw': np.zeros((1,config.network.DFF_FEAT_DIM,1,1)),
                 'feat_back': np.zeros((1,config.network.DFF_FEAT_DIM,1,1)),
             })
+
+        if comp_diff:
+            for i in range(interv):
+                frame_sym = mx.sym.Variable(name="frame")
+                m_vec_sym = mx.sym.Variable(name="m_vec")
+
+                m_vec_grid = mx.sym.GridGenerator(data=m_vec_sym, transform_type='warp', name='m_vec_grid')
+                frame_warp = mx.sym.BilinearSampler(data=frame_sym, grid=m_vec_grid, name='warping_feat')
+
+                frame_data = mx.nd.array(data[i]['data'])
+
+                m_vec_data = data[i+1]['m_vec'] * 16.
+                m_vec_data = np.repeat(m_vec_data, 16, axis=2)
+                m_vec_data = np.repeat(m_vec_data, 16, axis=3)
+                print np.shape(m_vec_data)
+                # print m_vec_data
+                m_vec_data = mx.nd.array(m_vec_data)
+                m_vec_data = mx.ndarray.negative(m_vec_data)
+
+                f_exec = frame_warp.bind(ctx=mx.gpu(),
+                    args={"frame": frame_data, "m_vec": m_vec_data},
+                    group2ctx={"frame": mx.gpu(), "m_vec": mx.cpu()})
+                f_exec.forward()
+
+                frame_i_warp = np.array(f_exec.outputs[0].asnumpy())
+
+                print 'deltas'
+                # diffs = compare_imgs(data[i]['data'], data[i+1]['data'])
+                # diff_0  += diffs[0]
+                # diff_5  += diffs[1]
+                # diff_10 += diffs[2]
+                # --interval 5 --num_ex 2 (total: 10)
+                # avgs: 0.875080553691 0.354579051336 0.249108441671 (all channels)
+                # avgs: 0.880920505524 0.358328533173 0.254517412186
+                # --interval 5 --num_ex 10 (total: 50)
+                # avgs: 0.856089115143 0.342332496643 0.227059316635
+                # --interval 5 --num_ex 50 (total: 250)
+                # avgs: 0.889601413727 0.423051366806 0.287254112244
+
+                print 'residuals'
+                diffs = compare_imgs(frame_i_warp, data[i+1]['data'])
+                diff_0  += diffs[0]
+                diff_5  += diffs[1]
+                diff_10 += diffs[2]
+                # --interval 5 --num_ex 2 (total: 10)
+                # avgs: 0.859159898758 0.215072154999 0.0927718003591 (all channels)
+                # avgs: 0.868176364899 0.221829843521 0.0966950416565
+                # --interval 5 --num_ex 10 (total: 50)
+                # avgs: 0.854715948105 0.249392948151 0.116685094833
+                # --interval 5 --num_ex 50 (total: 250)
+                # avgs: 0.882048036575 0.311128740311 0.153696537018
+                # --interval 5 --num_ex 100 (total: 500)
+                # avgs: 0.879370404243 0.296190703392 0.145828608513
+                diff = abs(data[i+1]['data'] - frame_i_warp)
+                diff = np.transpose(np.uint8(np.squeeze(diff)), (1, 2, 0))
+                # print diff
+                print np.shape(diff)
+                img = Image.fromarray(diff)
+                _, im_filename = os.path.split(snip_names[i+1])
+                img.save(output_dir + '/diff_' + im_filename)
+            continue
 
         # get predictor
         data_names = ['data', 'm_vec', 'feat_forw', 'feat_back']
@@ -358,6 +459,11 @@ def main():
     ious = per_class_iu(hist) * 100
     print ' '.join('{:.03f}'.format(i) for i in ious)
     print '===> final mIoU {mIoU:.3f}'.format(mIoU=round(np.nanmean(ious), 2))
+
+    avg_diff_0 = diff_0 / (num_ex * interv)
+    avg_diff_5 = diff_5 / (num_ex * interv)
+    avg_diff_10 = diff_10 / (num_ex * interv)
+    print avg_diff_0, avg_diff_5, avg_diff_10
 
     print 'done'
 
