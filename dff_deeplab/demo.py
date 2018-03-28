@@ -204,6 +204,7 @@ def main():
     time = 0
     count = 0
     hist = np.zeros((num_classes, num_classes))
+    lb_idx = 0
     for idx, im_name in enumerate(image_names):
         data_batch = mx.io.DataBatch(data=[data[idx]], label=[], pad=0, index=idx,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[idx])]],
@@ -239,13 +240,12 @@ def main():
         label = None
         if has_gt:
             # if annotation available for frame
-            if idx % interv == (interv - 1):
-                lb_idx = idx // interv
-                _, lb_filename = os.path.split(label_files[lb_idx])
+            _, lb_filename = os.path.split(label_files[lb_idx])
+            if im_filename[:len(ref_img_prefix)] == lb_filename[:len(ref_img_prefix)]:
                 print 'label {}'.format(lb_filename[:len(ref_img_prefix)])
-                if im_filename[:len(ref_img_prefix)] != lb_filename[:len(ref_img_prefix)]:
-                    sys.exit('image and label mismatched!')
                 label = np.asarray(Image.open(label_files[lb_idx]))
+                if lb_idx < len(label_files) - 1:
+                    lb_idx += 1
         else:
             _, lb_filename = os.path.split(label_files[idx])
             print 'label {}'.format(lb_filename[:len(ref_pred_prefix)])
