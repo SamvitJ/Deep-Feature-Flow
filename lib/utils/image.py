@@ -46,17 +46,17 @@ def get_ref_im(seg_rec, config):
     prefix = ''
     suffix = ''
     if seg_rec['flipped']:
-        prefix = seg_rec['image'][:-len('000019_leftImg8bit_flip.png')]
-        suffix = seg_rec['image'][-len('000019_leftImg8bit_flip.png'):]
+        prefix = seg_rec['image'][:-len('000019_leftImg8bit_flip-0000-0768.png')]
+        suffix = seg_rec['image'][-len('000019_leftImg8bit_flip-0000-0768.png'):]
     else:
-        prefix = seg_rec['image'][:-len('000019_leftImg8bit.png')]
-        suffix = seg_rec['image'][-len('000019_leftImg8bit.png'):]
+        prefix = seg_rec['image'][:-len('000019_leftImg8bit-0000-0768.png')]
+        suffix = seg_rec['image'][-len('000019_leftImg8bit-0000-0768.png'):]
 
     frame_id = int(suffix[:len('000019')])
     ref_id = max(frame_id + np.random.randint(config.TRAIN.MIN_OFFSET, config.TRAIN.MAX_OFFSET+1), 0)
     # print 'frame id: {}\n ref id: {}'.format(frame_id, ref_id)
 
-    prefix = prefix[len('./data/cityscapes/leftImg8bit/'):]
+    prefix = prefix[len('./data/cityscapes-crop/leftImg8bit/'):]
     ref_im_name = '/city/leftImg8bit_sequence/' + prefix + ('%06d' % ref_id) + '_leftImg8bit.png'
     # print seg_rec['image']
     # print ref_im_name
@@ -99,16 +99,16 @@ def get_segmentation_pair(segdb, config):
         target_size = config.SCALES[scale_ind][0]
         max_size = config.SCALES[scale_ind][1]
 
-        im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        # im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
         ref_im, ref_im_scale = resize(ref_im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
         im_tensor = transform(im, config.network.PIXEL_MEANS)
         ref_im_tensor = transform(ref_im, config.network.PIXEL_MEANS)
-        im_info = [im_tensor.shape[2], im_tensor.shape[3], im_scale]
+        im_info = [im_tensor.shape[2], im_tensor.shape[3], ref_im_scale]
         new_rec['im_info'] = im_info
 
         seg_cls_gt = np.array(Image.open(seg_rec['seg_cls_path']))
-        seg_cls_gt, seg_cls_gt_scale = resize(
-            seg_cls_gt, target_size, max_size, stride=config.network.IMAGE_STRIDE, interpolation=cv2.INTER_NEAREST)
+        # seg_cls_gt, seg_cls_gt_scale = resize(
+        #     seg_cls_gt, target_size, max_size, stride=config.network.IMAGE_STRIDE, interpolation=cv2.INTER_NEAREST)
         seg_cls_gt_tensor = transform_seg_gt(seg_cls_gt)
 
         processed_ims.append(im_tensor)

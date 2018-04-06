@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.join(cur_path, '../external/mxnet', config.MXNET_VERS
 import mxnet as mx
 from core.tester import im_segment, Predictor
 from symbols import *
-from utils.load_model import load_param_multi
+from utils.load_model import load_param, load_param_multi
 from utils.show_boxes import show_boxes, draw_boxes
 from utils.tictoc import tic, toc
 from nms.nms import py_nms_wrapper, cpu_nms_wrapper, gpu_nms_wrapper
@@ -44,6 +44,7 @@ def parse_args():
     parser.add_argument('-e', '--num_ex', type=int, default=10)
     parser.add_argument('--gt', dest='has_gt', action='store_true')
     parser.add_argument('--no_gt', dest='has_gt', action='store_false')
+    parser.add_argument('-g', '--grid_dim', type=int, default=4)
     parser.set_defaults(has_gt=True)
     args = parser.parse_args()
     return args
@@ -122,6 +123,7 @@ def main():
     config.symbol = 'resnet_v1_101_flownet_deeplab'
     model1 = '/../model/rfcn_dff_flownet_vid'
     model2 = '/../model/deeplab_dcn_cityscapes'
+    # model2 = '/../output/dff_deeplab/cityscapes/resnet_v1_101_flownet_cityscapes_deeplab_end2end_ohem/leftImg8bit_train/dff_deeplab_vid'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
     key_sym = sym_instance.get_key_test_symbol(config)
     cur_sym = sym_instance.get_cur_test_symbol(config)
@@ -131,16 +133,20 @@ def main():
     has_gt = args.has_gt
     interv = args.interval
     num_ex = args.num_ex
+    grid_dim = args.grid_dim
+    grid_scale = grid_dim * grid_dim
 
     # load demo data
     if has_gt:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_i' + str(interv) + '/*.png'))
+        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_i3/*.png'))
+        # image_names = sorted(glob.glob(cur_path + '/../data/cityscapes/leftImg8bit/val/frankfurt/*_leftImg8bit.png'))
         image_names = image_names[: interv * num_ex]
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
+        # label_files = sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/frankfurt/*_trainIds.png'))
     else:
         image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
-    output_dir = cur_path + '/../demo/deeplab_dff/'
+    output_dir = cur_path + '/../demo/deeplab_dff/out-montage'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     key_frame_interval = interv
@@ -154,12 +160,20 @@ def main():
         im = cv2.imread(im_name, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
         target_size = config.SCALES[0][0]
         max_size = config.SCALES[0][1]
-        im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        # im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        im_scale = 1.
         im_tensor = transform(im, config.network.PIXEL_MEANS)
         im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
         if idx % key_frame_interval == 0:
             key_im_tensor = im_tensor
-        data.append({'data': im_tensor, 'im_info': im_info, 'data_key': key_im_tensor, 'feat_key': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
+        x_inc = 2048 // grid_dim
+        y_inc = 1024 // grid_dim
+        for x in range(0, 2048, x_inc):
+            for y in range(0, 1024, y_inc):
+                im_frag = im_tensor[:, :, y : y + y_inc, x : x + x_inc]
+                # print im_tensor.shape, im_frag.shape
+                # print 'x,y', x, y
+                data.append({'data': im_frag, 'im_info': im_info, 'data_key': key_im_tensor, 'feat_key': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
 
 
     # get predictor
@@ -172,6 +186,10 @@ def main():
     provide_label = [None for i in xrange(len(data))]
     # models: rfcn_dff_flownet_vid, deeplab_cityscapes
     arg_params, aux_params = load_param_multi(cur_path + model1, cur_path + model2, 0, process=True)
+    # arg_params, aux_params = load_param(cur_path + model1, 0, process=True)
+    # arg_params_dl, aux_params_dl = load_param(cur_path + model2, 18, process=True)
+    # arg_params.update(arg_params_dl)
+    # aux_params.update(aux_params_dl)
     key_predictor = Predictor(key_sym, data_names, label_names,
                           context=[mx.gpu(0)], max_data_shapes=max_data_shape,
                           provide_data=provide_data, provide_label=provide_label,
@@ -205,11 +223,16 @@ def main():
     count = 0
     hist = np.zeros((num_classes, num_classes))
     lb_idx = 0
-    for idx, im_name in enumerate(image_names):
+    preds = []
+    for idx in range(len(image_names) * grid_scale):
+        im_name = image_names[idx // grid_scale]
         data_batch = mx.io.DataBatch(data=[data[idx]], label=[], pad=0, index=idx,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[idx])]],
                                      provide_label=[None])
         scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
+
+        if idx % grid_scale == 0:
+            preds = []
 
         tic()
         if idx % key_frame_interval == 0:
@@ -231,11 +254,25 @@ def main():
         print 'testing {} {:.4f}s [{:.4f}s]'.format(im_name, elapsed, time/count)
 
         pred = np.uint8(np.squeeze(output_all))
-        segmentation_result = Image.fromarray(pred)
+        preds.append(pred)
+
+        if len(preds) < grid_scale:
+            continue
+
+        preds_arr = np.asarray(preds)
+        print np.shape(preds_arr)
+        preds_arr = (preds_arr.reshape((grid_dim, grid_dim, 1024 // grid_dim, 2048 // grid_dim))
+                        .swapaxes(1, 2)
+                        .swapaxes(0, 2)
+                        .reshape((1024, 2048))
+                        )
+        print np.shape(preds_arr)
+
+        segmentation_result = Image.fromarray(preds_arr)
         pallete = getpallete(256)
         segmentation_result.putpalette(pallete)
         _, im_filename = os.path.split(im_name)
-        segmentation_result.save(output_dir + '/seg_' + im_filename)
+        segmentation_result.save(output_dir + '/seg_montage_' + im_filename)
 
         label = None
         if has_gt:
@@ -252,7 +289,7 @@ def main():
             label = np.asarray(Image.open(label_files[idx]))
 
         if label is not None:
-            curr_hist = fast_hist(pred.flatten(), label.flatten(), num_classes)
+            curr_hist = fast_hist(preds_arr.flatten(), label.flatten(), num_classes)
             hist += curr_hist
             print 'mIoU {mIoU:.3f}'.format(
                 mIoU=round(np.nanmean(per_class_iu(curr_hist)) * 100, 2))

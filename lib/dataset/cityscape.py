@@ -57,8 +57,8 @@ class CityScape(IMDB):
             splited_name_set = image_name.split('_')
             ext_split = splited_name_set[len(splited_name_set) - 1].split('.')
             ext = ext_split[len(ext_split)-1]
-            if splited_name_set[len(splited_name_set) - 1] != 'flip.png' and ext == 'png':
-                index_set[valid_index_count] = "_".join(splited_name_set[:len(splited_name_set)-1])
+            if not splited_name_set[len(splited_name_set) - 1].startswith('flip') and ext == 'png':
+                index_set[valid_index_count] = "_".join(splited_name_set[:len(splited_name_set)])[:-len(ext)-1]
                 valid_index_count += 1
 
         return index_set[:valid_index_count]
@@ -70,7 +70,7 @@ class CityScape(IMDB):
         :return: the image path
         """
         index_folder = index.split('_')[0]
-        image_file = os.path.join(self.data_path, self.image_set_main_folder, self.image_set_sub_folder, index_folder, index + '_' + self.image_set_main_folder + '.png')
+        image_file = os.path.join(self.data_path, self.image_set_main_folder, self.image_set_sub_folder, index_folder, index + '.png')
         assert os.path.exists(image_file), 'Path does not exist: {}'.format(image_file)
         return image_file
 
@@ -80,8 +80,13 @@ class CityScape(IMDB):
         :param index: the given index
         :return: the image path
         """
-        index_folder = index.split('_')[0]
-        image_file = os.path.join(self.data_path, 'gtFine', self.image_set_sub_folder, index_folder, index + '_gtFine_labelTrainIds.png')
+        index_cmps = index.split('_')
+        index_folder = index_cmps[0]
+        x_dim = index_cmps[len(index_cmps) - 1].split('-')[1]
+        y_dim = index_cmps[len(index_cmps) - 1].split('-')[2]
+        index_prefix = "_".join(index_cmps[:len(index_cmps) - 1])
+        image_file = os.path.join(self.data_path, 'gtFine', self.image_set_sub_folder, index_folder, index_prefix +
+            '_gtFine_trainIds-' + x_dim + '-' + y_dim + '.png')
         assert os.path.exists(image_file), 'Path does not exist: {}'.format(image_file)
         return image_file
 
