@@ -127,9 +127,9 @@ def compare_imgs(curr_img, next_img):
 
     diff = next_img - curr_img
     # print diff
-    print 'max', np.amax(curr_img), np.amax(next_img), np.amax(diff)
-    print 'min', np.amin(curr_img), np.amin(next_img), np.amin(diff)
-    print 'avg', np.mean(curr_img), np.mean(next_img), np.mean(abs(diff))
+    # print 'max', np.amax(curr_img), np.amax(next_img), np.amax(diff)
+    # print 'min', np.amin(curr_img), np.amin(next_img), np.amin(diff)
+    # print 'avg', np.mean(curr_img), np.mean(next_img), np.mean(abs(diff))
 
     print np.shape(diff)
     flat_diff = np.ravel(abs(diff))
@@ -138,13 +138,13 @@ def compare_imgs(curr_img, next_img):
         deltas = [delta[0][0], delta[0][1], delta[0][2]]
         deltas = [np.ravel(d) for d in deltas]
         fracs = [len(np.where(d > k)[0]) / (1. * np.size(d)) for d in deltas]
-        print fracs
+        # print fracs
         return max(fracs)
 
     # def diff_greater(k):
     #     return len(np.where(flat_diff > k)[0]) / (1. * np.size(flat_diff))
 
-    print '0-norm', np.linalg.norm(flat_diff, ord=0) / (1. * np.size(flat_diff))
+    # print '0-norm', np.linalg.norm(flat_diff, ord=0) / (1. * np.size(flat_diff))
     diff_0  = diff_greater(1e-5, abs(diff))
     diff_5  = diff_greater(5, abs(diff))
     diff_10 = diff_greater(10, abs(diff))
@@ -235,6 +235,7 @@ def main():
 
         if comp_diff:
             for i in range(interv):
+                print '\n', snip_names[i+1]
                 frame_sym = mx.sym.Variable(name="frame")
                 m_vec_sym = mx.sym.Variable(name="m_vec")
 
@@ -286,6 +287,15 @@ def main():
                 # --interval 5 --num_ex 100 (total: 500)
                 # avgs: 0.879370404243 0.296190703392 0.145828608513
                 diff = abs(data[i+1]['data'] - frame_i_warp)
+
+                x_inc = 512
+                y_inc = 256
+                for x in range(0, 2048, x_inc):
+                    for y in range(0, 1024, y_inc):
+                        diff_frag = diff[:, :, y : y + y_inc, x : x + x_inc]
+                        print 'norms %4d %4d %6d %5.1d' % (x, y, np.linalg.norm(np.ravel(diff_frag), 2),
+                            np.average(diff_frag))
+
                 diff = np.transpose(np.uint8(np.squeeze(diff)), (1, 2, 0))
                 # print diff
                 print np.shape(diff)
