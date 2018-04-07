@@ -18,6 +18,7 @@ from config.config import config, update_config
 from utils.image import resize, transform
 from PIL import Image
 import numpy as np
+import pickle
 
 # get config
 os.environ['PYTHONUNBUFFERED'] = '1'
@@ -137,8 +138,9 @@ def main():
     grid_scale = grid_dim * grid_dim
 
     # load demo data
+    istr = 'i' + str(interv)
     if has_gt:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_i3/*.png'))
+        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_' + istr + '/*.png'))
         # image_names = sorted(glob.glob(cur_path + '/../data/cityscapes/leftImg8bit/val/frankfurt/*_leftImg8bit.png'))
         image_names = image_names[: interv * num_ex]
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
@@ -147,6 +149,7 @@ def main():
         image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
     output_dir = cur_path + '/../demo/deeplab_dff/out-montage'
+    mv_file = cur_path + '/../demo/cityscapes_frankfurt_all_' + istr + '/frankfurt-' + istr + '.pkl'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     key_frame_interval = interv
@@ -155,29 +158,27 @@ def main():
 
     data = []
     key_im_tensor = None
+    mv_tensor = None
+    mvs = pickle.load(open(mv_file, 'rb'))
+    mvs = np.transpose(mvs, (0, 3, 1, 2))
+    print "mvs.shape %s" % (mvs.shape,)
     for idx, im_name in enumerate(image_names):
         assert os.path.exists(im_name), ('%s does not exist'.format(im_name))
         im = cv2.imread(im_name, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
         target_size = config.SCALES[0][0]
         max_size = config.SCALES[0][1]
-        # im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
-        im_scale = 1.
+        im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        # im_scale = 1.
         im_tensor = transform(im, config.network.PIXEL_MEANS)
         im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
         if idx % key_frame_interval == 0:
             key_im_tensor = im_tensor
-        x_inc = 2048 // grid_dim
-        y_inc = 1024 // grid_dim
-        for x in range(0, 2048, x_inc):
-            for y in range(0, 1024, y_inc):
-                im_frag = im_tensor[:, :, y : y + y_inc, x : x + x_inc]
-                # print im_tensor.shape, im_frag.shape
-                # print 'x,y', x, y
-                data.append({'data': im_frag, 'im_info': im_info, 'data_key': key_im_tensor, 'feat_key': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
+        mv_tensor = np.negative(np.expand_dims(mvs[idx], axis=0) / 16.)
+        data.append({'data': im_tensor, 'im_info': im_info, 'm_vec': mv_tensor, 'data_key': key_im_tensor, 'feat_prev': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
 
 
     # get predictor
-    data_names = ['data', 'data_key', 'feat_key']
+    data_names = ['data', 'm_vec', 'data_key', 'feat_prev']
     label_names = []
     data = [[mx.nd.array(data[i][name]) for name in data_names] for i in xrange(len(data))]
     max_data_shape = [[('data', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
@@ -205,16 +206,16 @@ def main():
         data_batch = mx.io.DataBatch(data=[data[j]], label=[], pad=0, index=0,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[j])]],
                                      provide_label=[None])
-        scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
+        # scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
         if j % key_frame_interval == 0:
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
         else:
             data_batch.data[0][-1] = feat
-            data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
+            data_batch.provide_data[0][-1] = ('feat_prev', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
-            output_all, _ = im_segment(cur_predictor, data_batch)
+            output_all, feat = im_segment(cur_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
     print "warmup done"
@@ -224,15 +225,15 @@ def main():
     hist = np.zeros((num_classes, num_classes))
     lb_idx = 0
     preds = []
-    for idx in range(len(image_names) * grid_scale):
-        im_name = image_names[idx // grid_scale]
+    for idx, im_name in enumerate(image_names):
+        # im_name = image_names[idx // grid_scale]
         data_batch = mx.io.DataBatch(data=[data[idx]], label=[], pad=0, index=idx,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[idx])]],
                                      provide_label=[None])
-        scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
+        # scales = [data_batch.data[i][1].asnumpy()[0, 2] for i in xrange(len(data_batch.data))]
 
-        if idx % grid_scale == 0:
-            preds = []
+        # if idx % grid_scale == 0:
+        #     preds = []
 
         tic()
         if idx % key_frame_interval == 0:
@@ -243,9 +244,9 @@ def main():
         else:
             print '\nframe {} (intermediate)'.format(idx)
             data_batch.data[0][-1] = feat
-            data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
+            data_batch.provide_data[0][-1] = ('feat_prev', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
-            output_all, _ = im_segment(cur_predictor, data_batch)
+            output_all, feat = im_segment(cur_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
         elapsed = toc()
@@ -254,25 +255,28 @@ def main():
         print 'testing {} {:.4f}s [{:.4f}s]'.format(im_name, elapsed, time/count)
 
         pred = np.uint8(np.squeeze(output_all))
-        preds.append(pred)
+        segmentation_result = Image.fromarray(pred)
 
-        if len(preds) < grid_scale:
-            continue
+        # preds.append(pred)
 
-        preds_arr = np.asarray(preds)
-        print np.shape(preds_arr)
-        preds_arr = (preds_arr.reshape((grid_dim, grid_dim, 1024 // grid_dim, 2048 // grid_dim))
-                        .swapaxes(1, 2)
-                        .swapaxes(0, 2)
-                        .reshape((1024, 2048))
-                        )
-        print np.shape(preds_arr)
+        # if len(preds) < grid_scale:
+        #     continue
 
-        segmentation_result = Image.fromarray(preds_arr)
+        # preds_arr = np.asarray(preds)
+        # print np.shape(preds_arr)
+        # preds_arr = (preds_arr.reshape((grid_dim, grid_dim, 1024 // grid_dim, 2048 // grid_dim))
+        #                 .swapaxes(1, 2)
+        #                 .swapaxes(0, 2)
+        #                 .reshape((1024, 2048))
+        #                 )
+        # print np.shape(preds_arr)
+        #
+        # segmentation_result = Image.fromarray(preds_arr)
+
         pallete = getpallete(256)
         segmentation_result.putpalette(pallete)
         _, im_filename = os.path.split(im_name)
-        segmentation_result.save(output_dir + '/seg_montage_' + im_filename)
+        segmentation_result.save(output_dir + '/seg_' + im_filename)
 
         label = None
         if has_gt:
@@ -289,7 +293,7 @@ def main():
             label = np.asarray(Image.open(label_files[idx]))
 
         if label is not None:
-            curr_hist = fast_hist(preds_arr.flatten(), label.flatten(), num_classes)
+            curr_hist = fast_hist(pred.flatten(), label.flatten(), num_classes)
             hist += curr_hist
             print 'mIoU {mIoU:.3f}'.format(
                 mIoU=round(np.nanmean(per_class_iu(curr_hist)) * 100, 2))
