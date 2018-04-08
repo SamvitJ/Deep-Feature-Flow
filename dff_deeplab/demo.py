@@ -19,6 +19,7 @@ from utils.image import resize, transform
 from PIL import Image
 import numpy as np
 import pickle
+import time
 
 # get config
 os.environ['PYTHONUNBUFFERED'] = '1'
@@ -118,13 +119,51 @@ def getpallete(num_cls):
 
     return pallete
 
+def get_residual(frame_data, m_vec_data, next_frame_data):
+    start = time.time()
+    frame_sym = mx.sym.Variable(name="frame")
+    m_vec_sym = mx.sym.Variable(name="m_vec")
+
+    m_vec_grid = mx.sym.GridGenerator(data=m_vec_sym, transform_type='warp', name='m_vec_grid')
+    frame_warp = mx.sym.BilinearSampler(data=frame_sym, grid=m_vec_grid, name='warping_feat')
+
+    frame_data = mx.nd.array(frame_data)
+
+    m_vec_data = m_vec_data * 16.
+    m_vec_data = np.repeat(m_vec_data, 16, axis=2)
+    m_vec_data = np.repeat(m_vec_data, 16, axis=3)
+    print np.shape(m_vec_data)
+    m_vec_data = mx.nd.array(m_vec_data)
+
+    f_exec = frame_warp.bind(ctx=mx.gpu(),
+        args={"frame": frame_data, "m_vec": m_vec_data},
+        group2ctx={"frame": mx.gpu(), "m_vec": mx.cpu()})
+    f_exec.forward()
+
+    frame_i_warp = np.array(f_exec.outputs[0].asnumpy())
+    next_frame = np.array(next_frame_data.asnumpy())
+
+    print 'residual'
+    diff = abs(next_frame - frame_i_warp)
+
+    # x_inc = 512
+    # y_inc = 256
+    # for x in range(0, 2048, x_inc):
+    #     for y in range(0, 1024, y_inc):
+    #         diff_frag = diff[:, :, y : y + y_inc, x : x + x_inc]
+    #         print 'norms %4d %4d %6d %5.1d' % (x, y, np.linalg.norm(np.ravel(diff_frag), 2),
+    #             np.average(diff_frag))
+
+    print time.time() - start
+    return diff
+
 def main():
     # get symbol
     pprint.pprint(config)
     config.symbol = 'resnet_v1_101_flownet_deeplab'
     model1 = '/../model/rfcn_dff_flownet_vid'
     model2 = '/../model/deeplab_dcn_cityscapes'
-    # model2 = '/../output/dff_deeplab/cityscapes/resnet_v1_101_flownet_cityscapes_deeplab_end2end_ohem/leftImg8bit_train/dff_deeplab_vid'
+    model3 = '/../output/dff_deeplab/cityscapes-2/resnet_v1_101_flownet_cityscapes_deeplab_end2end_ohem/leftImg8bit_train/dff_deeplab_vid'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
     key_sym = sym_instance.get_key_test_symbol(config)
     cur_sym = sym_instance.get_cur_test_symbol(config)
@@ -136,6 +175,7 @@ def main():
     num_ex = args.num_ex
     grid_dim = args.grid_dim
     grid_scale = grid_dim * grid_dim
+    feat_dim = 16
 
     # load demo data
     istr = 'i' + str(interv)
@@ -157,6 +197,7 @@ def main():
     #
 
     data = []
+    frag_data = []
     key_im_tensor = None
     mv_tensor = None
     mvs = pickle.load(open(mv_file, 'rb'))
@@ -175,22 +216,30 @@ def main():
             key_im_tensor = im_tensor
         mv_tensor = np.negative(np.expand_dims(mvs[idx], axis=0) / 16.)
         data.append({'data': im_tensor, 'im_info': im_info, 'm_vec': mv_tensor, 'data_key': key_im_tensor, 'feat_prev': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
-
+        x_inc = 2048 // grid_dim
+        y_inc = 1024 // grid_dim
+        for x in range(0, 2048, x_inc):
+            for y in range(0, 1024, y_inc):
+                im_frag = im_tensor[:, :, y : y + y_inc, x : x + x_inc]
+                frag_data.append({'data': im_frag, 'im_info': im_info, 'm_vec': mv_tensor, 'data_key': key_im_tensor,
+                    'feat_prev': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
 
     # get predictor
     data_names = ['data', 'm_vec', 'data_key', 'feat_prev']
     label_names = []
     data = [[mx.nd.array(data[i][name]) for name in data_names] for i in xrange(len(data))]
+    frag_data = [[mx.nd.array(frag_data[i][name]) for name in data_names] for i in xrange(len(frag_data))]
     max_data_shape = [[('data', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
                        ('data_key', (1, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),]]
     provide_data = [[(k, v.shape) for k, v in zip(data_names, data[i])] for i in xrange(len(data))]
     provide_label = [None for i in xrange(len(data))]
     # models: rfcn_dff_flownet_vid, deeplab_cityscapes
     arg_params, aux_params = load_param_multi(cur_path + model1, cur_path + model2, 0, process=True)
-    # arg_params, aux_params = load_param(cur_path + model1, 0, process=True)
-    # arg_params_dl, aux_params_dl = load_param(cur_path + model2, 18, process=True)
-    # arg_params.update(arg_params_dl)
-    # aux_params.update(aux_params_dl)
+    # fragment seg models
+    f_arg_params, f_aux_params = load_param(cur_path + model1, 0, process=True)
+    f_arg_params_dl, f_aux_params_dl = load_param(cur_path + model3, 30, process=True)
+    f_arg_params.update(f_arg_params_dl)
+    f_aux_params.update(f_aux_params_dl)
     key_predictor = Predictor(key_sym, data_names, label_names,
                           context=[mx.gpu(0)], max_data_shapes=max_data_shape,
                           provide_data=provide_data, provide_label=provide_label,
@@ -199,7 +248,37 @@ def main():
                           context=[mx.gpu(0)], max_data_shapes=max_data_shape,
                           provide_data=provide_data, provide_label=provide_label,
                           arg_params=arg_params, aux_params=aux_params)
+    frag_predictor = Predictor(key_sym, data_names, label_names,
+                          context=[mx.gpu(0)], max_data_shapes=max_data_shape,
+                          provide_data=provide_data, provide_label=provide_label,
+                          arg_params=f_arg_params, aux_params=f_aux_params)
     nms = gpu_nms_wrapper(config.TEST.NMS, 0)
+
+    # # compute residuals
+    # for idx, im_name in enumerate(image_names):
+    #     if idx % key_frame_interval != 0:
+    #         residual = get_residual(data[idx-1][0], data[idx][1], data[idx][0])
+    #         # write residual to disk
+    #         residual = np.transpose(np.uint8(np.squeeze(residual)), (1, 2, 0))
+    #         img = Image.fromarray(residual)
+    #         _, im_filename = os.path.split(im_name)
+    #         img.save(output_dir + '/diff_' + im_filename)
+    # return
+
+    # read residuals
+    resid_data = []
+    for idx, im_name in enumerate(image_names):
+        if idx % key_frame_interval == 0:
+            resid_data.append("")
+        else:
+            _, im_filename = os.path.split(im_name)
+            residual = Image.open(output_dir + '/diff_' + im_filename)
+            residual = np.array(residual)
+            # print residual.shape
+            residual = np.transpose(residual, (2, 0, 1))
+            residual = np.expand_dims(residual, axis=0)
+            # print residual.shape
+            resid_data.append(residual)
 
     # warm up
     for j in xrange(2):
@@ -220,7 +299,7 @@ def main():
 
     print "warmup done"
     # test
-    time = 0
+    tot_time = 0
     count = 0
     hist = np.zeros((num_classes, num_classes))
     lb_idx = 0
@@ -247,31 +326,62 @@ def main():
             data_batch.provide_data[0][-1] = ('feat_prev', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(cur_predictor, data_batch)
+            # output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
+
+        if idx % key_frame_interval != 0:
+            # compute residual
+            residual = resid_data[idx]
+            # residual = get_residual(data[idx-1][0], data[idx][1], data[idx][0])
+
+            # update segmentation
+            x_inc = 2048 // grid_dim
+            y_inc = 1024 // grid_dim
+            ctr = 0
+            for x in range(0, 2048, x_inc):
+                for y in range(0, 1024, y_inc):
+                    resid_frag = residual[:, :, y : y + y_inc, x : x + x_inc]
+                    print 'norms %4d %4d %6d %5.1d' % (x, y, np.linalg.norm(np.ravel(resid_frag), 2),
+                        np.average(resid_frag))
+                    norm = np.linalg.norm(np.ravel(resid_frag), 2)
+                    if norm > 10000:
+                        print 'over 10,000!'
+                        f_idx = (grid_scale * idx) + ctr
+                        f_data_batch = mx.io.DataBatch(data=[frag_data[f_idx]], label=[], pad=0, index=f_idx,
+                            provide_data=[[(k, v.shape) for k, v in zip(data_names, frag_data[f_idx])]],
+                            provide_label=[None])
+                        f_output_all, f_feat = im_segment(frag_predictor, f_data_batch)
+                        feat[:, :, y // feat_dim : (y + y_inc) // feat_dim, x // feat_dim : (x + x_inc) // feat_dim] = f_feat
+                        for i in range(len(output_all)):
+                            print output_all[i]['croped_score_output'].shape
+                            print f_output_all[i]['croped_score_output'].shape
+                            output_all[i]['croped_score_output'][:, :, y : y + y_inc, x : x + x_inc] = f_output_all[i]['croped_score_output']
+
+                        # # write fragment to disk
+                        # f_output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in f_output_all]
+                        # f_pred = np.uint8(np.squeeze(f_output_all))
+                        # f_seg_result = Image.fromarray(f_pred)
+
+                        # pallete = getpallete(256)
+                        # f_seg_result.putpalette(pallete)
+                        # _, im_filename = os.path.split(im_name)
+                        # f_seg_result.save(output_dir + '/seg_' + str(x) + '_' + str(y) + '_' + im_filename)
+                    ctr += 1
+
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
+            # write residual to disk
+            # residual = np.transpose(np.uint8(np.squeeze(residual)), (1, 2, 0))
+            # img = Image.fromarray(residual)
+            # _, im_filename = os.path.split(im_name)
+            # img.save(output_dir + '/diff_' + im_filename)
+
         elapsed = toc()
-        time += elapsed
+        tot_time += elapsed
         count += 1
-        print 'testing {} {:.4f}s [{:.4f}s]'.format(im_name, elapsed, time/count)
+        print 'testing {} {:.4f}s [{:.4f}s]'.format(im_name, elapsed, tot_time/count)
 
         pred = np.uint8(np.squeeze(output_all))
         segmentation_result = Image.fromarray(pred)
-
-        # preds.append(pred)
-
-        # if len(preds) < grid_scale:
-        #     continue
-
-        # preds_arr = np.asarray(preds)
-        # print np.shape(preds_arr)
-        # preds_arr = (preds_arr.reshape((grid_dim, grid_dim, 1024 // grid_dim, 2048 // grid_dim))
-        #                 .swapaxes(1, 2)
-        #                 .swapaxes(0, 2)
-        #                 .reshape((1024, 2048))
-        #                 )
-        # print np.shape(preds_arr)
-        #
-        # segmentation_result = Image.fromarray(preds_arr)
 
         pallete = getpallete(256)
         segmentation_result.putpalette(pallete)
