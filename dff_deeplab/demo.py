@@ -333,6 +333,9 @@ def main():
             residual = resid_data[idx]
             # residual = get_residual(data[idx-1][0], data[idx][1], data[idx][0])
 
+            # ref segmentation
+            ref_output_all, ref_feat = im_segment(key_predictor, data_batch)
+
             # update segmentation
             x_inc = 2048 // grid_dim
             y_inc = 1024 // grid_dim
@@ -345,16 +348,16 @@ def main():
                     norm = np.linalg.norm(np.ravel(resid_frag), 2)
                     if norm > 10000:
                         print 'over 10,000!'
-                        f_idx = (grid_scale * idx) + ctr
-                        f_data_batch = mx.io.DataBatch(data=[frag_data[f_idx]], label=[], pad=0, index=f_idx,
-                            provide_data=[[(k, v.shape) for k, v in zip(data_names, frag_data[f_idx])]],
-                            provide_label=[None])
-                        f_output_all, f_feat = im_segment(frag_predictor, f_data_batch)
-                        feat[:, :, y // feat_dim : (y + y_inc) // feat_dim, x // feat_dim : (x + x_inc) // feat_dim] = f_feat
+                        # f_idx = (grid_scale * idx) + ctr
+                        # f_data_batch = mx.io.DataBatch(data=[frag_data[f_idx]], label=[], pad=0, index=f_idx,
+                        #     provide_data=[[(k, v.shape) for k, v in zip(data_names, frag_data[f_idx])]],
+                        #     provide_label=[None])
+                        # f_output_all, f_feat = im_segment(frag_predictor, f_data_batch)
+                        feat[:, :, y // feat_dim : (y + y_inc) // feat_dim, x // feat_dim : (x + x_inc) // feat_dim] = ref_feat[:, :, y // feat_dim : (y + y_inc) // feat_dim, x // feat_dim : (x + x_inc) // feat_dim]
                         for i in range(len(output_all)):
                             print output_all[i]['croped_score_output'].shape
-                            print f_output_all[i]['croped_score_output'].shape
-                            output_all[i]['croped_score_output'][:, :, y : y + y_inc, x : x + x_inc] = f_output_all[i]['croped_score_output']
+                            print ref_output_all[i]['croped_score_output'].shape
+                            output_all[i]['croped_score_output'][:, :, y : y + y_inc, x : x + x_inc] = ref_output_all[i]['croped_score_output'][:, :, y : y + y_inc, x : x + x_inc]
 
                         # # write fragment to disk
                         # f_output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in f_output_all]
