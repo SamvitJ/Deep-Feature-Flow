@@ -164,6 +164,10 @@ def im_segment(predictor, data_batch):
 
     if output_all[0].has_key('res5c_relu_output'):
         feat = output_all[0]['res5c_relu_output']
+    # elif output_all[0].has_key('warping_feat_output'):
+    #     feat = output_all[0]['warping_feat_output']
+    elif output_all[0].has_key('_plus8_output'):
+        feat = output_all[0]['_plus8_output']
     else:
         feat = None
 

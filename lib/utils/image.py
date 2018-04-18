@@ -53,7 +53,7 @@ def get_ref_im(seg_rec, config):
         suffix = seg_rec['image'][-len('000019_leftImg8bit.png'):]
 
     frame_id = int(suffix[:len('000019')])
-    ref_id = max(frame_id + np.random.randint(config.TRAIN.MIN_OFFSET, config.TRAIN.MAX_OFFSET+1), 0)
+    ref_id = max(frame_id - 1, 0)
     # print 'frame id: {}\n ref id: {}'.format(frame_id, ref_id)
 
     prefix = prefix[len('./data/cityscapes/leftImg8bit/'):]

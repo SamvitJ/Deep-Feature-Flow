@@ -26,6 +26,132 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         self.units = (3, 4, 23, 3) # use for 101
         self.filter_list = [256, 512, 1024, 2048]
 
+    def residual_unit(self, data, num_filter, stride, dim_match, name, bottle_neck=True, bn_mom=0.9, workspace=512, memonger=False):
+        """Return ResNet Unit symbol for building ResNet
+        Parameters
+        ----------
+        data : str
+            Input data
+        num_filter : int
+            Number of output channels
+        bnf : int
+            Bottle neck channels factor with regard to num_filter
+        stride : tupe
+            Stride used in convolution
+        dim_match : Boolen
+            True means channel number between input and output is the same, otherwise means differ
+        name : str
+            Base name of the operators
+        workspace : int
+            Workspace used in convolution operator
+        """
+        if bottle_neck:
+            # the same as https://github.com/facebook/fb.resnet.torch#notes, a bit difference with origin paper
+            bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
+            act1 = mx.sym.Activation(data=bn1, act_type='relu', name=name + '_relu1')
+            conv1 = mx.sym.Convolution(data=act1, num_filter=int(num_filter*0.25), kernel=(1,1), stride=(1,1), pad=(0,0),
+                                          no_bias=True, workspace=workspace, name=name + '_conv1')
+            bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
+            act2 = mx.sym.Activation(data=bn2, act_type='relu', name=name + '_relu2')
+            conv2 = mx.sym.Convolution(data=act2, num_filter=int(num_filter*0.25), kernel=(3,3), stride=stride, pad=(1,1),
+                                          no_bias=True, workspace=workspace, name=name + '_conv2')
+            bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
+            act3 = mx.sym.Activation(data=bn3, act_type='relu', name=name + '_relu3')
+            conv3 = mx.sym.Convolution(data=act3, num_filter=num_filter, kernel=(1,1), stride=(1,1), pad=(0,0), no_bias=True,
+                                       workspace=workspace, name=name + '_conv3')
+            if dim_match:
+                shortcut = data
+            else:
+                shortcut = mx.sym.Convolution(data=act1, num_filter=num_filter, kernel=(1,1), stride=stride, no_bias=True,
+                                                workspace=workspace, name=name+'_sc')
+            if memonger:
+                shortcut._set_attr(mirror_stage='True')
+            return conv3 + shortcut
+        else:
+            bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1')
+            act1 = mx.sym.Activation(data=bn1, act_type='relu', name=name + '_relu1')
+            conv1 = mx.sym.Convolution(data=act1, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
+                                          no_bias=True, workspace=workspace, name=name + '_conv1')
+            _, shape, _ = conv1.infer_shape(data=(1, 3, 1024, 2048))
+            print (name + '_conv1'), shape
+
+            bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2')
+            act2 = mx.sym.Activation(data=bn2, act_type='relu', name=name + '_relu2')
+            conv2 = mx.sym.Convolution(data=act2, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
+                                          no_bias=True, workspace=workspace, name=name + '_conv2')
+            _, shape, _ = conv2.infer_shape(data=(1, 3, 1024, 2048))
+            print (name + '_conv2'), shape
+
+            if dim_match:
+                shortcut = data
+            else:
+                shortcut = mx.sym.Convolution(data=act1, num_filter=num_filter, kernel=(1,1), stride=stride, no_bias=True,
+                                                workspace=workspace, name=name+'_sc')
+            _, shape, _ = shortcut.infer_shape(data=(1, 3, 1024, 2048))
+            print (name + '_sc'), shape
+
+            if memonger:
+                shortcut._set_attr(mirror_stage='True')
+            return conv2 + shortcut
+
+    def resnet(self, data_sym, units, num_stages, filter_list, num_classes, data_type, bottle_neck=True, bn_mom=0.9, workspace=512, memonger=False):
+        """Return ResNet symbol of cifar10 and imagenet
+        Parameters
+        ----------
+        units : list
+            Number of units in each stage
+        num_stages : int
+            Number of stage
+        filter_list : list
+            Channel size of each stage
+        num_classes : int
+            Ouput size of symbol
+        dataset : str
+            Dataset type, only cifar10 and imagenet supports
+        workspace : int
+            Workspace used in convolution operator
+        """
+        num_unit = len(units)
+        assert(num_unit == num_stages)
+        data = data_sym
+        data = mx.sym.BatchNorm(data=data, fix_gamma=True, eps=2e-5, momentum=bn_mom, name='bn_data')
+        if data_type == 'cifar10':
+            body = mx.sym.Convolution(data=data, num_filter=filter_list[0], kernel=(3, 3), stride=(1,1), pad=(1, 1),
+                                      no_bias=True, name="conv0", workspace=workspace)
+        elif data_type == 'imagenet':
+            body = mx.sym.Convolution(data=data, num_filter=filter_list[0], kernel=(7, 7), stride=(2,2), pad=(3, 3),
+                                      no_bias=True, name="conv0", workspace=workspace)
+            body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn0')
+            body = mx.sym.Activation(data=body, act_type='relu', name='relu0')
+            body = mx.symbol.Pooling(data=body, kernel=(3, 3), stride=(2,2), pad=(1,1), pool_type='max')
+        else:
+             raise ValueError("do not support {} yet".format(data_type))
+
+        _, body_shape, _ = body.infer_shape(data=(1, 3, 1024, 2048))
+        print 'resnet l0', body_shape
+
+        for i in range(num_stages):
+            body = self.residual_unit(body, filter_list[i+1], (1 if i==0 else 2, 1 if i==0 else 2), False,
+                                 name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, workspace=workspace,
+                                 memonger=memonger)
+
+            for j in range(units[i]-1):
+                body = self.residual_unit(body, filter_list[i+1], (1,1), True, name='stage%d_unit%d' % (i + 1, j + 2),
+                                     bottle_neck=bottle_neck, workspace=workspace, memonger=memonger)
+            _, body_shape, _ = body.infer_shape(data=(1, 3, 1024, 2048))
+            print ('resnet l' + str(1+i)), body_shape
+
+        bn1 = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn1')
+        relu1 = mx.sym.Activation(data=bn1, act_type='relu', name='relu1')
+
+        _, relu_shape, _ = relu1.infer_shape(data=(1, 3, 1024, 2048))
+        print 'resnet feat', relu_shape
+        # # Although kernel is not used here when global_pool=True, we should put one
+        # pool1 = mx.symbol.Pooling(data=relu1, global_pool=True, kernel=(7, 7), pool_type='avg', name='pool1')
+        # flat = mx.symbol.Flatten(data=pool1)
+        # fc1 = mx.symbol.FullyConnected(data=flat, num_hidden=num_classes, name='fc1')
+        return relu1 # mx.symbol.SoftmaxOutput(data=fc1, name='softmax')
+
     def get_resnet_dcn(self, data):
         conv1 = mx.symbol.Convolution(name='conv1', data=data, num_filter=64, pad=(3, 3), kernel=(7, 7), stride=(2, 2),
                                       no_bias=True)
@@ -1265,6 +1391,44 @@ class resnet_v1_101_flownet_deeplab(Symbol):
                                                    bias=Convolution5_scale_bias, no_bias=False)
         return Convolution5 * 2.5, Convolution5_scale
 
+    def get_cur_sketch(self, cfg, data):
+
+        num_classes = cfg.dataset.NUM_CLASSES
+
+        curr_feat = self.resnet(data_sym=data, units=[2, 2, 2, 2], num_stages=4,
+            filter_list=[64, 64, 128, 256, 512], num_classes=1000, data_type="imagenet",
+            bottle_neck=False, bn_mom=0.9, workspace=512, memonger=False)
+        _, shape, _ = curr_feat.infer_shape(data=(1,3,1024,2048))
+        print 'curr feat', shape
+
+        curr_feat = mx.symbol.Deconvolution(
+            data=curr_feat, num_filter=2048, pad=(1,1), kernel=(4, 4), stride=(2, 2), no_bias=True,
+            name='upscaling', workspace=self.workspace)
+        _, shape, _ = curr_feat.infer_shape(data=(1,3,1024,2048))
+        print 'curr feat', shape
+
+        # # deeplab
+        # fc6_bias = mx.symbol.Variable('fc6_bias_2', lr_mult=2.0)
+        # fc6_weight = mx.symbol.Variable('fc6_weight_2', lr_mult=1.0)
+
+        # fc6 = mx.symbol.Convolution(
+        #     data=curr_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6_2", bias=fc6_bias, weight=fc6_weight,
+        #     workspace=self.workspace)
+        # relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='relu_fc6_2')
+
+        # score_bias = mx.symbol.Variable('score_bias_2', lr_mult=2.0)
+        # score_weight = mx.symbol.Variable('score_weight_2', lr_mult=1.0)
+
+        # score = mx.symbol.Convolution(
+        #     data=relu_fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="score_2", bias=score_bias,
+        #     weight=score_weight, workspace=self.workspace)
+
+        # upsampling = mx.symbol.Deconvolution(
+        #     data=score, num_filter=num_classes, kernel=(64, 64), stride=(32, 32), pad=(8, 8), num_group=num_classes, no_bias=True,
+        #     name='upsampling_2', workspace=self.workspace)
+
+        return curr_feat # upsampling
+
     def get_train_symbol(self, cfg):
 
         # config alias for convenient
@@ -1276,7 +1440,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         seg_cls_gt = mx.symbol.Variable(name='label')
 
         # shared convolutional layers
-        conv_feat = self.get_resnet_v1(data_ref)
+        conv_feat = self.get_resnet_dcn(data_ref)
         flow, scale_map = self.get_flownet(data, data_ref)
         flow_grid = mx.sym.GridGenerator(data=flow, transform_type='warp', name='flow_grid')
         warp_conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid, name='warping_feat')
@@ -1284,6 +1448,10 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         select_conv_feat = mx.sym.take(mx.sym.Concat(*[warp_conv_feat, conv_feat], dim=0), eq_flag)
 
         # conv_feats = mx.sym.SliceChannel(select_conv_feat, axis=1, num_outputs=2)
+
+        # fusion step
+        curr_feat = self.get_cur_sketch(cfg, data)
+        select_conv_feat = curr_feat + select_conv_feat
 
         # subsequent fc layers by haozhi
         fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
@@ -1302,6 +1470,10 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         upsampling = mx.symbol.Deconvolution(data=score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16),
                                              num_group=num_classes, no_bias=True, name='upsampling',
                                              attr={'lr_mult': '0.0'}, workspace=self.workspace)
+
+        # # fusion step
+        # curr_upsampling = self.get_cur_sketch(cfg, data)
+        # upsampling = (curr_upsampling + upsampling) / 2.
 
         croped_score = mx.symbol.Crop(*[upsampling, data], offset=(8, 8), name='croped_score')
         softmax = mx.symbol.SoftmaxOutput(data=croped_score, label=seg_cls_gt, normalization='valid', multi_output=True,
@@ -1324,6 +1496,8 @@ class resnet_v1_101_flownet_deeplab(Symbol):
 
         # shared convolutional layers
         conv_feat = self.get_resnet_dcn(data)
+        _, shape, _ = conv_feat.infer_shape(data=(1,3,1024,2048))
+        print 'key feat', shape
 
         # deeplab
         fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
@@ -1364,8 +1538,16 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         data_cur = mx.sym.Variable(name="data")
         data_key = mx.sym.Variable(name="data_key")
         conv_feat = mx.sym.Variable(name="feat_key")
+        _, shape, _ = conv_feat.infer_shape(feat_key=(1,2048,64,128))
+        print 'prev feat', shape
 
-        # conv_feat = self.get_resnet_v1(data_cur)
+        # curr_feat = self.get_resnet_dcn(data_cur)
+        # curr_feat = self.resnet(data_sym=data_cur, units=[2, 2, 2, 2], num_stages=4,
+        #     filter_list=[64, 64, 128, 256, 512], num_classes=1000, data_type="imagenet",
+        #     bottle_neck=False, bn_mom=0.9, workspace=512, memonger=False)
+        curr_feat = self.get_cur_sketch(cfg, data_cur)
+        _, shape, _ = curr_feat.infer_shape(data=(1,3,1024,2048))
+        print 'curr feat', shape
 
         # feat_conv_3x3 = mx.sym.Convolution(
         #     data=conv_feat, kernel=(3, 3), pad=(6, 6), dilate=(6, 6), num_filter=1024, name="feat_conv_3x3")
@@ -1377,12 +1559,17 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid, name='warping_feat')
         # conv_feat = conv_feat * scale_map
 
+        # feature fusion
+        fuse_feat = curr_feat + conv_feat
+        _, shape, _ = fuse_feat.infer_shape(data=(1,3,1024,2048), data_key=(1,3,1024,2048), feat_key=(1,2048,64,128))
+        print 'fused feat', shape
+
         # deeplab
         fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
         fc6_weight = mx.symbol.Variable('fc6_weight', lr_mult=1.0)
 
         fc6 = mx.symbol.Convolution(
-            data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6", bias=fc6_bias, weight=fc6_weight,
+            data=fuse_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6", bias=fc6_bias, weight=fc6_weight,
             workspace=self.workspace)
         relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='relu_fc6')
 
@@ -1392,17 +1579,25 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         score = mx.symbol.Convolution(
             data=relu_fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="score", bias=score_bias,
             weight=score_weight, workspace=self.workspace)
+        _, shape, _ = score.infer_shape(data=(1,3,1024,2048), data_key=(1,3,1024,2048), feat_key=(1,2048,64,128))
+        print 'score', shape
 
         upsampling = mx.symbol.Deconvolution(
             data=score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16), num_group=num_classes, no_bias=True,
             name='upsampling', attr={'lr_mult': '0.0'}, workspace=self.workspace)
 
+        # fusion step
+        # curr_upsampling = self.get_cur_sketch(cfg, data_cur)
+        # upsampling = (curr_upsampling + upsampling) / 2.
+
         croped_score = mx.symbol.Crop(*[upsampling, data_cur], offset=(8, 8), name='croped_score')
+        _, shape, _ = croped_score.infer_shape(data=(1,3,1024,2048), data_key=(1,3,1024,2048), feat_key=(1,2048,64,128))
+        print 'cropped score', shape
 
         # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
         #                                   ignore_label=255, name="softmax")
 
-        group = mx.sym.Group([data_key, conv_feat, croped_score])
+        group = mx.sym.Group([data_key, conv_feat, curr_feat, fuse_feat, croped_score])
         self.sym = group
         return group
 
@@ -1487,14 +1682,23 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         return group
 
     def init_weight(self, cfg, arg_params, aux_params):
-        arg_params['fc6_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['fc6_weight'])
-        arg_params['fc6_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['fc6_bias'])
-        arg_params['score_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['score_weight'])
-        arg_params['score_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['score_bias'])
-        arg_params['upsampling_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['upsampling_weight'])
+        # arg_params['fc6_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['fc6_weight'])
+        # arg_params['fc6_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['fc6_bias'])
+        # arg_params['score_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['score_weight'])
+        # arg_params['score_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['score_bias'])
+        # arg_params['upsampling_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['upsampling_weight'])
 
-        init = mx.init.Initializer()
-        init._init_bilinear('upsample_weight', arg_params['upsampling_weight'])
+        # arg_params['fc6_weight_2'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['fc6_weight_2'])
+        # arg_params['fc6_bias_2'] = mx.nd.zeros(shape=self.arg_shape_dict['fc6_bias_2'])
+        # arg_params['score_weight_2'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['score_weight_2'])
+        # arg_params['score_bias_2'] = mx.nd.zeros(shape=self.arg_shape_dict['score_bias_2'])
+        # arg_params['upsampling_2_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['upsampling_2_weight'])
+        arg_params['upscaling_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['upscaling_weight'])
+
+        # init = mx.init.Initializer()
+        # init._init_bilinear('upsample_weight', arg_params['upsampling_weight'])
+        # init._init_bilinear('upsample_weight', arg_params['upsampling_2_weight'])
+        # init._init_bilinear('upsample_weight', arg_params['upscaling_weight'])
 
         # arg_params['Convolution5_scale_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['Convolution5_scale_weight'])
         # arg_params['Convolution5_scale_bias'] = mx.nd.ones(shape=self.arg_shape_dict['Convolution5_scale_bias'])

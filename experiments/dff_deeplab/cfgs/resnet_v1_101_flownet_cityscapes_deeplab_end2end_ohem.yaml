@@ -2,7 +2,7 @@
 MXNET_VERSION: "mxnet"
 output_path: "./output/dff_deeplab/cityscapes"
 symbol: resnet_v1_101_flownet_deeplab
-gpus: '0,1,2,3'
+gpus: '0,1,2,3,4,5,6,7'
 SCALES:
 - 1024
 - 2048
@@ -11,7 +11,8 @@ default:
   kvstore: device
 network:
   pretrained: "./model/rfcn_dff_flownet_vid"
-  pretrained_flow: "./model/deeplab_cityscapes"
+  pretrained_flow: "./model/deeplab_dcn_cityscapes"
+  pretrained_ec: "./model/resnet-18"
   pretrained_epoch: 0
   PIXEL_MEANS:
   - 103.06
@@ -25,6 +26,39 @@ network:
   - bn2
   - gamma
   - beta
+  # res-101
+  - res3
+  - bn3
+  - res4
+  - bn4
+  - res5
+  - bn5
+  # res-18
+  - bn_data
+  - conv0
+  - bn0
+  - relu0
+  - stage
+  - bn1
+  - relu1
+  # task
+  - fc6
+  - score
+  - upsampling
+  # flow
+  - ReLU
+  - flow_conv1
+  - conv2
+  - conv3
+  - conv4
+  - conv5
+  - conv6
+  - Convolution
+  - deconv
+  - crop_deconv
+  - upsample_flow
+  - crop_upsampled
+  - Concat
   FIXED_PARAMS_SHARED:
   - conv1
   - bn_conv1

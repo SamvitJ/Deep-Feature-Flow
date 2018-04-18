@@ -76,7 +76,7 @@ config.TRAIN.ASPECT_GROUPING = True
 # used for end2end training
 
 # DFF, trained image sampled from [min_offset, max_offset]
-config.TRAIN.MIN_OFFSET = -4
+config.TRAIN.MIN_OFFSET = -1
 config.TRAIN.MAX_OFFSET = 0
 
 config.TEST = edict()
