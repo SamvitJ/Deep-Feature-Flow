@@ -1,7 +1,7 @@
 import mxnet as mx
 
 
-def load_checkpoint(prefix, epoch):
+def load_checkpoint(prefix, epoch, argprefix=''):
     """
     Load model checkpoint from file.
     :param prefix: Prefix of model name.
@@ -18,9 +18,15 @@ def load_checkpoint(prefix, epoch):
     for k, v in save_dict.items():
         tp, name = k.split(':', 1)
         if tp == 'arg':
-            arg_params[name] = v
+            if name[:len(argprefix)] == argprefix:
+                arg_params[name] = v
+            else:
+                arg_params[argprefix + name] = v
         if tp == 'aux':
-            aux_params[name] = v
+            if name[:len(argprefix)] == argprefix:
+                aux_params[name] = v
+            else:
+                aux_params[argprefix + name] = v
     return arg_params, aux_params
 
 def load_checkpoint_multi(prefix1, prefix2, epoch):
@@ -64,7 +70,7 @@ def convert_context(params, ctx):
     return new_params
 
 
-def load_param(prefix, epoch, convert=False, ctx=None, process=False):
+def load_param(prefix, epoch, convert=False, ctx=None, process=False, argprefix=''):
     """
     wrapper for load checkpoint
     :param prefix: Prefix of model name.
@@ -74,7 +80,7 @@ def load_param(prefix, epoch, convert=False, ctx=None, process=False):
     :param process: model should drop any test
     :return: (arg_params, aux_params)
     """
-    arg_params, aux_params = load_checkpoint(prefix, epoch)
+    arg_params, aux_params = load_checkpoint(prefix, epoch, argprefix)
     if convert:
         if ctx is None:
             ctx = mx.cpu()

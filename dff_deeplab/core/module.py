@@ -744,6 +744,7 @@ class MutableModule(BaseModule):
                 for prefix in self._fixed_param_prefix:
                     if name.startswith(prefix):
                         fixed_param_names.append(name)
+        print list(set(self._symbol.list_arguments()) - set(fixed_param_names))
         self._fixed_param_names = fixed_param_names
         self._preload_opt_states = None
 

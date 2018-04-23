@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.join(cur_path, '../external/mxnet', config.MXNET_VERS
 import mxnet as mx
 from core.tester import im_segment, Predictor
 from symbols import *
-from utils.load_model import load_param_multi
+from utils.load_model import load_param, load_param_multi
 from utils.show_boxes import show_boxes, draw_boxes
 from utils.tictoc import tic, toc
 from nms.nms import py_nms_wrapper, cpu_nms_wrapper, gpu_nms_wrapper
@@ -42,6 +42,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Show Deep Feature Flow demo')
     parser.add_argument('-i', '--interval', type=int, default=1)
     parser.add_argument('-e', '--num_ex', type=int, default=10)
+    parser.add_argument('-m', '--model_num', type=int, default=0)
     parser.add_argument('--gt', dest='has_gt', action='store_true')
     parser.add_argument('--no_gt', dest='has_gt', action='store_false')
     parser.set_defaults(has_gt=True)
@@ -121,7 +122,8 @@ def main():
     pprint.pprint(config)
     config.symbol = 'resnet_v1_101_flownet_deeplab'
     model1 = '/../model/rfcn_dff_flownet_vid'
-    model2 = '/../model/deeplab_dcn_cityscapes'
+    # model2 = '/../model/deeplab_dcn_cityscapes'
+    model2 = '/../output/dff_deeplab/cityscapes/resnet_v1_101_flownet_cityscapes_deeplab_end2end_ohem/leftImg8bit_train/dff_deeplab_vid'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
     key_sym = sym_instance.get_key_test_symbol(config)
     cur_sym = sym_instance.get_cur_test_symbol(config)
@@ -131,6 +133,7 @@ def main():
     has_gt = args.has_gt
     interv = args.interval
     num_ex = args.num_ex
+    model_num = args.model_num
 
     # load demo data
     if has_gt:
@@ -149,6 +152,7 @@ def main():
 
     data = []
     key_im_tensor = None
+    prev_im_tensor = None
     for idx, im_name in enumerate(image_names):
         assert os.path.exists(im_name), ('%s does not exist'.format(im_name))
         im = cv2.imread(im_name, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
@@ -159,8 +163,10 @@ def main():
         im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
         if idx % key_frame_interval == 0:
             key_im_tensor = im_tensor
-        data.append({'data': im_tensor, 'im_info': im_info, 'data_key': key_im_tensor, 'feat_key': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
-
+        if prev_im_tensor is None:
+            prev_im_tensor = im_tensor
+        data.append({'data': im_tensor, 'im_info': im_info, 'data_key': prev_im_tensor, 'feat_key': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
+        prev_im_tensor = im_tensor
 
     # get predictor
     data_names = ['data', 'data_key', 'feat_key']
@@ -171,7 +177,11 @@ def main():
     provide_data = [[(k, v.shape) for k, v in zip(data_names, data[i])] for i in xrange(len(data))]
     provide_label = [None for i in xrange(len(data))]
     # models: rfcn_dff_flownet_vid, deeplab_cityscapes
-    arg_params, aux_params = load_param_multi(cur_path + model1, cur_path + model2, 0, process=True)
+    # arg_params, aux_params = load_param_multi(cur_path + model1, cur_path + model2, 0, process=True)
+    arg_params, aux_params = load_param(cur_path + model1, 0, process=True)
+    arg_params_dcn, aux_params_dcn = load_param(cur_path + model2, model_num, process=True)
+    arg_params.update(arg_params_dcn)
+    aux_params.update(aux_params_dcn)
     key_predictor = Predictor(key_sym, data_names, label_names,
                           context=[mx.gpu(0)], max_data_shapes=max_data_shape,
                           provide_data=provide_data, provide_label=provide_label,
@@ -196,8 +206,8 @@ def main():
             data_batch.data[0][-1] = feat
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
-            output_all, _ = im_segment(cur_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
+            output_all, feat = im_segment(cur_predictor, data_batch)
+            output_all = [mx.ndarray.argmax(output['correction_output'], axis=1).asnumpy() for output in output_all]
 
     print "warmup done"
     # test
@@ -222,8 +232,8 @@ def main():
             data_batch.data[0][-1] = feat
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
-            output_all, _ = im_segment(cur_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
+            output_all, feat = im_segment(cur_predictor, data_batch)
+            output_all = [mx.ndarray.argmax(output['correction_output'], axis=1).asnumpy() for output in output_all]
 
         elapsed = toc()
         time += elapsed
