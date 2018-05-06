@@ -39,7 +39,7 @@ def get_image(roidb, config):
         processed_roidb.append(new_rec)
     return processed_ims, processed_roidb
 
-def get_ref_im(seg_rec, config):
+def get_ref_imgs(seg_rec, config, num):
 
     eq_flag = 0 # 0 for unequal, 1 for equal
 
@@ -53,24 +53,28 @@ def get_ref_im(seg_rec, config):
         suffix = seg_rec['image'][-len('000019_leftImg8bit.png'):]
 
     frame_id = int(suffix[:len('000019')])
-    ref_id = max(frame_id - 1, 0)
-    # print 'frame id: {}\n ref id: {}'.format(frame_id, ref_id)
 
-    prefix = prefix[len('./data/cityscapes/leftImg8bit/'):]
-    ref_im_name = '/city/leftImg8bit_sequence/' + prefix + ('%06d' % ref_id) + '_leftImg8bit.png'
-    # print seg_rec['image']
-    # print ref_im_name
+    ref_imgs = []
+    for idx in range(num, 0, -1):
 
-    # read ref image
-    if not os.path.exists(ref_im_name):
-        print '{} does not exist'.format(ref_im_name)
-        ref_id = frame_id
-        ref_im_name = seg_rec['image']
-    ref_im = np.array(cv2.imread(ref_im_name))
-    if ref_id == frame_id:
-        eq_flag = 1
+        ref_id = frame_id - idx
+        # print 'frame id: {}\n ref id: {}'.format(frame_id, ref_id)
 
-    return ref_im, eq_flag
+        ref_prefix = prefix[len('./data/cityscapes/leftImg8bit/'):]
+        ref_im_name = '/city/leftImg8bit_sequence/' + ref_prefix + ('%06d' % ref_id) + '_leftImg8bit.png'
+        # print seg_rec['image']
+        # print ref_im_name
+
+        # read ref image
+        if not os.path.exists(ref_im_name):
+            print '{} does not exist'.format(ref_im_name)
+            ref_id = frame_id
+            ref_im_name = seg_rec['image']
+        ref_im = np.array(cv2.imread(ref_im_name))
+
+        ref_imgs.append(ref_im)
+
+    return ref_imgs, eq_flag
 
 def get_segmentation_pair(segdb, config):
     """
@@ -92,7 +96,7 @@ def get_segmentation_pair(segdb, config):
         im = np.array(cv2.imread(seg_rec['image']))
 
         assert not seg_rec['flipped']
-        ref_im, eq_flag = get_ref_im(seg_rec, config)
+        ref_imgs, eq_flag = get_ref_imgs(seg_rec, config, config.TRAIN.KEY_INTERVAL - 1)
 
         new_rec = seg_rec.copy()
         scale_ind = random.randrange(len(config.SCALES))
@@ -100,9 +104,15 @@ def get_segmentation_pair(segdb, config):
         max_size = config.SCALES[scale_ind][1]
 
         im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
-        ref_im, ref_im_scale = resize(ref_im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
         im_tensor = transform(im, config.network.PIXEL_MEANS)
-        ref_im_tensor = transform(ref_im, config.network.PIXEL_MEANS)
+        ref_im_tensors = []
+        for ref_im in ref_imgs:
+            ref_im, ref_im_scale = resize(ref_im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+            tensor = transform(ref_im, config.network.PIXEL_MEANS)
+            ref_im_tensors.append(tensor)
+        # print ref_im_tensors[0].shape
+        ref_im_tensor = np.concatenate(ref_im_tensors, axis=0)
+        # print ref_im_tensor.shape
         im_info = [im_tensor.shape[2], im_tensor.shape[3], im_scale]
         new_rec['im_info'] = im_info
 
