@@ -12,7 +12,7 @@ default:
 network:
   pretrained: "./model/rfcn_dff_flownet_vid"
   pretrained_flow: "./model/deeplab_dcn_cityscapes"
-  pretrained_ec: "./model/trained/resnet-18" # "./model/trained/resnet-50"
+  pretrained_ec: "./model/trained/resnet-18*-0092"
   pretrained_epoch: 0
   PIXEL_MEANS:
   - 103.06
@@ -85,6 +85,7 @@ TRAIN:
   FLIP: false
   # size of images for each device
   BATCH_IMAGES: 1
+  KEY_INTERVAL: 5
   # e2e changes behavior of anchor loader and metric
   END2END: true
   # wheter crop image during training
