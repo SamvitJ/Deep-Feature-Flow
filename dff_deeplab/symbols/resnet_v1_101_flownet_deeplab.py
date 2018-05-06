@@ -1762,47 +1762,37 @@ class resnet_v1_101_flownet_deeplab(Symbol):
 
         # config alias for convenient
         num_classes = cfg.dataset.NUM_CLASSES
+        num_interms = cfg.TRAIN.KEY_INTERVAL - 1
 
         data = mx.sym.Variable(name="data")
         data_ref = mx.sym.Variable(name="data_ref")
         eq_flag = mx.sym.Variable(name="eq_flag")
         seg_cls_gt = mx.symbol.Variable(name='label')
 
-        # shared convolutional layers
-        # data_concat = mx.sym.Concat(*[data_ref, data], dim=0)
-        # conv_feat_concat = self.get_resnet_dcn(data_concat)
-        # conv_feat_split = mx.sym.split(conv_feat_concat, num_outputs=2, axis=0)
-        # conv_feat = conv_feat_split[0]
-        # feat_curr = conv_feat_split[1]
-        conv_feat = self.get_resnet_dcn(data_ref)
+        # keyframe features
+        data_ref_split = mx.sym.split(data_ref, num_outputs=num_interms, axis=0)
+        conv_feat = self.get_resnet_dcn(data_ref_split[0])
 
-        # get curr features
-        # pre_conv_bias = mx.symbol.Variable('pre_conv_bias', lr_mult=4.0)
-        # pre_conv_weight = mx.symbol.Variable('pre_conv_weight', lr_mult=2.0)
-        # feat_curr = mx.symbol.Convolution(data=feat_curr, kernel=(1, 1), num_filter=2048, name='pre_conv1',
-        #                                   bias=pre_conv_bias, weight=pre_conv_weight, workspace=self.workspace)
+        # data
+        data_next = mx.sym.Concat(*[data_ref_split[1], data_ref_split[2], data_ref_split[3], data], dim=0)
+        data_prev = mx.sym.Concat(*[data_ref_split[0], data_ref_split[1], data_ref_split[2], data_ref_split[3]], dim=0)
 
-        # feat_curr = self.resnet(data_sym=data, units=[3, 4, 23, 3], num_stages=4,
-        #     filter_list=[64, 256, 512, 1024, 2048], num_classes=1000, data_type="imagenet",
-        #     bottle_neck=True, bn_mom=0.9, workspace=512, memonger=False)
-        # feat_curr = mx.symbol.Deconvolution(data=feat_curr, num_filter=2048, kernel=(4, 4), stride=(2, 2), pad=(1, 1),
-        #                                     no_bias=True, name='curr_upsampling', workspace=self.workspace,
-        #                                     attr={'lr_mult': '2.0'})
-
-        flow, scale_map = self.get_flownet(data, data_ref)
+        # warp features
+        flow, scale_map = self.get_flownet(data_next, data_prev)
         flow_grid = mx.sym.GridGenerator(data=flow, transform_type='warp', name='flow_grid')
-        warp_conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid, name='warping_feat')
+        flow_grid_split = mx.sym.split(flow_grid, num_outputs=num_interms, axis=0)
+
+        for idx in range(num_interms):
+            conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid_split[idx], name='warping_feat')
+
         # warp_conv_feat = warp_conv_feat * scale_map
-        select_conv_feat = mx.sym.take(mx.sym.Concat(*[warp_conv_feat, conv_feat], dim=0), eq_flag)
+        # select_conv_feat = mx.sym.take(mx.sym.Concat(*[warp_conv_feat, conv_feat], dim=0), eq_flag)
 
-        # # concat features
-        # feat_concat = mx.sym.Concat(*[select_conv_feat, feat_curr], dim=0)
-
-        # subsequent fc layers by haozhi
+        # L branch
         fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
         fc6_weight = mx.symbol.Variable('fc6_weight', lr_mult=1.0)
 
-        fc6 = mx.symbol.Convolution(data=select_conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6",
+        fc6 = mx.symbol.Convolution(data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6",
                                     bias=fc6_bias, weight=fc6_weight, workspace=self.workspace)
         relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='relu_fc6')
 
@@ -1818,11 +1808,13 @@ class resnet_v1_101_flownet_deeplab(Symbol):
 
         croped_score = mx.symbol.Crop(*[upsampling, data], offset=(8, 8), name='croped_score')
 
-        # curr frame
+        # R branch
         feat_curr = self.resnet(data_sym=data, prefix="18_", units=[2, 2, 2, 2], num_stages=4,
             filter_list=[64, 64, 128, 256, 512], num_classes=1000, data_type="imagenet",
             bottle_neck=False, bn_mom=0.9, workspace=512, memonger=False)
-        # self.get_resnet_dcn_50(data)
+        feat_curr = mx.symbol.Deconvolution(
+            data=feat_curr, num_filter=2048, kernel=(4, 4), stride=(2, 2), pad=(1, 1),
+            no_bias=True, name='18_feat_upsampling', workspace=self.workspace, attr={'lr_mult': '2.0'})
 
         curr_fc6_bias = mx.symbol.Variable('18_fc6_bias', lr_mult=2.0)
         curr_fc6_weight = mx.symbol.Variable('18_fc6_weight', lr_mult=1.0)
@@ -1837,29 +1829,13 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         curr_score = mx.symbol.Convolution(data=curr_relu_fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="18_score",
                                            bias=curr_score_bias, weight=curr_score_weight, workspace=self.workspace)
 
-        curr_upsampling = mx.symbol.Deconvolution(data=curr_score, num_filter=num_classes, kernel=(64, 64), stride=(32, 32),
+        curr_upsampling = mx.symbol.Deconvolution(data=curr_score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16),
                                                   num_group=num_classes, no_bias=True, name='18_upsampling',
                                                   attr={'lr_mult': '0.0'}, workspace=self.workspace)
 
         curr_croped_score = mx.symbol.Crop(*[curr_upsampling, data], offset=(8, 8), name='18_croped_score')
 
-        # # processing layer
-        # pre_conv_bias = mx.symbol.Variable('pre_conv_bias', lr_mult=4.0)
-        # pre_conv_weight = mx.symbol.Variable('pre_conv_weight', lr_mult=2.0)
-        # conv1 = mx.symbol.Convolution(data=data, kernel=(3, 3), pad=(1, 1), num_filter=num_classes, name='pre_conv1',
-        #                            bias=pre_conv_bias, weight=pre_conv_weight, workspace=self.workspace)
-        # bn1 = mx.symbol.BatchNorm(data=conv1, use_global_stats=True, fix_gamma=False, eps=self.eps, name='pre_bn1')
-        # act1 = mx.sym.Activation(data=bn1, act_type='relu', name='pre_relu1')
-
-        # # upsampling layer
-        # curr_upsampling = mx.symbol.Deconvolution(data=feat_curr, num_filter=num_classes, kernel=(32, 32), stride=(16, 16),
-        #                                           no_bias=True, name='curr_upsampling', workspace=self.workspace,
-        #                                           attr={'lr_mult': '4.0'})
-        # curr_cropped_score = mx.symbol.Crop(*[curr_upsampling, data], offset=(8, 8), name='curr_cropped_score')
-
         # correction layer
-        # NOTE: 2x learning rate
-        # score_split = mx.sym.split(croped_score, num_outputs=2, axis=0)
         stacked_in = mx.sym.Concat(*[croped_score, curr_croped_score], dim=1)
 
         corr_bias = mx.symbol.Variable('corr_bias', lr_mult=4.0)
@@ -1928,30 +1904,13 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         data_key = mx.sym.Variable(name="data_key")
         conv_feat = mx.sym.Variable(name="feat_key")
 
-        # conv_feat = self.get_resnet_v1(data_cur)
-        # feat_curr = self.get_resnet_dcn(data_cur)
-        # feat_curr = self.get_resnet_dcn_50(data_cur)
-        # pre_conv_bias = mx.symbol.Variable('pre_conv_bias', lr_mult=4.0)
-        # pre_conv_weight = mx.symbol.Variable('pre_conv_weight', lr_mult=2.0)
-        # feat_curr = mx.symbol.Convolution(data=feat_curr, kernel=(1, 1), num_filter=2048, name='pre_conv1',
-        #                                   bias=pre_conv_bias, weight=pre_conv_weight, workspace=self.workspace)
-
-        # feat_curr = self.resnet(data_sym=data_cur, units=[3, 4, 6, 3], num_stages=4,
-        #     filter_list=[64, 256, 512, 1024, 2048], num_classes=1000, data_type="imagenet",
-        #     bottle_neck=True, bn_mom=0.9, workspace=512, memonger=False)
-        # feat_curr = mx.symbol.Deconvolution(data=feat_curr, num_filter=2048, kernel=(4, 4), stride=(2, 2), pad=(1, 1),
-        #                                     no_bias=True, name='curr_upsampling', workspace=self.workspace)
-
-        # shared convolutional layers
+        # warp features
         flow, scale_map = self.get_flownet(data_cur, data_key)
         flow_grid = mx.sym.GridGenerator(data=flow, transform_type='warp', name='flow_grid')
         conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid, name='warping_feat')
         # conv_feat = conv_feat * scale_map
 
-        # # feature fusion
-        # feat_concat = mx.sym.Concat(*[conv_feat, feat_curr], dim=0)
-
-        # prev frame
+        # L branch
         fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
         fc6_weight = mx.symbol.Variable('fc6_weight', lr_mult=1.0)
 
@@ -1973,11 +1932,13 @@ class resnet_v1_101_flownet_deeplab(Symbol):
 
         croped_score = mx.symbol.Crop(*[upsampling, data_cur], offset=(8, 8), name='croped_score')
 
-
-        # curr frame
+        # R branch
         feat_curr = self.resnet(data_sym=data_cur, prefix="18_", units=[2, 2, 2, 2], num_stages=4,
             filter_list=[64, 64, 128, 256, 512], num_classes=1000, data_type="imagenet",
             bottle_neck=False, bn_mom=0.9, workspace=512, memonger=False)
+        feat_curr = mx.symbol.Deconvolution(
+            data=feat_curr, num_filter=2048, kernel=(4, 4), stride=(2, 2), pad=(1, 1),
+            no_bias=True, name='18_feat_upsampling', workspace=self.workspace, attr={'lr_mult': '2.0'})
 
         curr_fc6_bias = mx.symbol.Variable('18_fc6_bias', lr_mult=2.0)
         curr_fc6_weight = mx.symbol.Variable('18_fc6_weight', lr_mult=1.0)
@@ -1995,26 +1956,12 @@ class resnet_v1_101_flownet_deeplab(Symbol):
             bias=curr_score_bias, weight=curr_score_weight, workspace=self.workspace)
 
         curr_upsampling = mx.symbol.Deconvolution(
-            data=curr_score, num_filter=num_classes, kernel=(64, 64), stride=(32, 32), num_group=num_classes,
+            data=curr_score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16), num_group=num_classes,
             no_bias=True, name='18_upsampling', attr={'lr_mult': '0.0'}, workspace=self.workspace)
 
         curr_croped_score = mx.symbol.Crop(*[curr_upsampling, data_cur], offset=(8, 8), name='18_croped_score')
 
-        # # processing layer
-        # pre_conv_bias = mx.symbol.Variable('pre_conv_bias', lr_mult=2.0)
-        # pre_conv_weight = mx.symbol.Variable('pre_conv_weight', lr_mult=1.0)
-        # conv1 = mx.symbol.Convolution(data=data_cur, kernel=(3, 3), pad=(1, 1), num_filter=num_classes, name='pre_conv1',
-        #                            bias=pre_conv_bias, weight=pre_conv_weight, workspace=self.workspace)
-        # bn1 = mx.symbol.BatchNorm(data=conv1, use_global_stats=True, fix_gamma=False, eps=self.eps, name='pre_bn1')
-        # act1 = mx.sym.Activation(data=bn1, act_type='relu', name='pre_relu1')
-
-        # # upsampling layer
-        # curr_upsampling = mx.symbol.Deconvolution(data=feat_curr, num_filter=num_classes, kernel=(32, 32), stride=(16, 16),
-        #                                           no_bias=True, name='curr_upsampling', workspace=self.workspace)
-        # curr_cropped_score = mx.symbol.Crop(*[curr_upsampling, data_cur], offset=(8, 8), name='curr_cropped_score')
-
         # correction layer
-        # score_split = mx.sym.split(croped_score, num_outputs=2, axis=0)
         stacked_in = mx.sym.Concat(*[croped_score, curr_croped_score], dim=1)
 
         corr_bias = mx.symbol.Variable('corr_bias', lr_mult=4.0)
