@@ -43,6 +43,7 @@ def parse_args():
     parser.add_argument('-i', '--interval', type=int, default=1)
     parser.add_argument('-e', '--num_ex', type=int, default=10)
     parser.add_argument('-m', '--model_num', type=int, default=0)
+    parser.add_argument('-mname', '--model_name', type=str, default='')
     parser.add_argument('--avg', dest='avg_acc', action='store_true')
     parser.add_argument('--gt', dest='has_gt', action='store_true')
     parser.add_argument('--no_gt', dest='has_gt', action='store_false')
@@ -120,15 +121,6 @@ def getpallete(num_cls):
     return pallete
 
 def main():
-    # get symbol
-    pprint.pprint(config)
-    config.symbol = 'resnet_v1_101_flownet_deeplab'
-    model1 = '/../model/rfcn_dff_flownet_vid'
-    # model2 = '/../model/deeplab_dcn_cityscapes'
-    model2 = '/../output/dff_deeplab/cityscapes/resnet_v1_101_flownet_cityscapes_deeplab_end2end_ohem/leftImg8bit_train/dff_deeplab_vid'
-    sym_instance = eval(config.symbol + '.' + config.symbol)()
-    key_sym = sym_instance.get_key_test_symbol(config)
-    cur_sym = sym_instance.get_cur_test_symbol(config)
 
     # settings
     num_classes = 19
@@ -137,7 +129,18 @@ def main():
     interv = args.interval
     num_ex = args.num_ex
     model_num = args.model_num
+    model_name = args.model_name
     avg_acc = args.avg_acc
+
+    # get symbol
+    pprint.pprint(config)
+    config.symbol = 'resnet_v1_101_flownet_deeplab'
+    model1 = '/../model/rfcn_dff_flownet_vid'
+    # model2 = '/../model/deeplab_dcn_cityscapes'
+    model2 = '/../output/dff_deeplab/cityscapes/resnet_v1_101_flownet_cityscapes_deeplab_end2end_ohem/leftImg8bit_train/' + model_name + '/dff_deeplab_vid'
+    sym_instance = eval(config.symbol + '.' + config.symbol)()
+    key_sym = sym_instance.get_key_test_symbol(config)
+    cur_sym = sym_instance.get_cur_test_symbol(config)
 
     # load demo data
     if has_gt:
