@@ -43,8 +43,10 @@ def parse_args():
     parser.add_argument('-i', '--interval', type=int, default=1)
     parser.add_argument('-e', '--num_ex', type=int, default=10)
     parser.add_argument('-m', '--model_num', type=int, default=0)
+    parser.add_argument('--avg', dest='avg_acc', action='store_true')
     parser.add_argument('--gt', dest='has_gt', action='store_true')
     parser.add_argument('--no_gt', dest='has_gt', action='store_false')
+    parser.set_defaults(avg_acc=False)
     parser.set_defaults(has_gt=True)
     args = parser.parse_args()
     return args
@@ -130,16 +132,22 @@ def main():
 
     # settings
     num_classes = 19
+    snip_len = 30
     has_gt = args.has_gt
     interv = args.interval
     num_ex = args.num_ex
     model_num = args.model_num
+    avg_acc = args.avg_acc
 
     # load demo data
     if has_gt:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_i' + str(interv) + '/*.png'))
-        image_names = image_names[: interv * num_ex]
-        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
+        image_names  = sorted(glob.glob('/city/leftImg8bit_sequence/val/frankfurt/*.png'))
+        image_names += sorted(glob.glob('/city/leftImg8bit_sequence/val/lindau/*.png'))
+        image_names += sorted(glob.glob('/city/leftImg8bit_sequence/val/munster/*.png'))
+        image_names = image_names[: snip_len * num_ex]
+        label_files  = sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/frankfurt/*trainIds.png'))
+        label_files += sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/lindau/*trainIds.png'))
+        label_files += sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/munster/*trainIds.png'))
     else:
         image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
         label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
@@ -149,6 +157,17 @@ def main():
     key_frame_interval = interv
 
     #
+    lb_pos = 19
+    image_names_trunc = []
+    for i in range(num_ex):
+        snip_pos = i * snip_len
+        if avg_acc:
+            offset = i % interv
+        else:
+            offset = interv - 1
+        start_pos = lb_pos - offset
+        image_names_trunc.extend(image_names[snip_pos + start_pos : snip_pos + start_pos + interv])
+    image_names = image_names_trunc
 
     data = []
     key_im_tensor = None
@@ -223,7 +242,7 @@ def main():
 
         tic()
         if idx % key_frame_interval == 0:
-            print '\nframe {} (key)'.format(idx)
+            print '\n\nframe {} (key)'.format(idx)
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
@@ -251,8 +270,10 @@ def main():
         if has_gt:
             # if annotation available for frame
             _, lb_filename = os.path.split(label_files[lb_idx])
-            if im_filename[:len(ref_img_prefix)] == lb_filename[:len(ref_img_prefix)]:
-                print 'label {}'.format(lb_filename[:len(ref_img_prefix)])
+            im_comps = im_filename.split('_')
+            lb_comps = lb_filename.split('_')
+            if im_comps[1] == lb_comps[1] and im_comps[2] == lb_comps[2]:
+                print 'label {}'.format(lb_filename)
                 label = np.asarray(Image.open(label_files[lb_idx]))
                 if lb_idx < len(label_files) - 1:
                     lb_idx += 1
