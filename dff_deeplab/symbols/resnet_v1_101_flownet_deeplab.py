@@ -1874,6 +1874,95 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         self.sym = group
         return group
 
+    def get_key_image_test_symbol(self, cfg):
+
+        # config alias for convenient
+        num_classes = cfg.dataset.NUM_CLASSES
+        num_reg_classes = (2 if cfg.CLASS_AGNOSTIC else num_classes)
+        num_anchors = cfg.network.NUM_ANCHORS
+
+        data = mx.sym.Variable(name="data")
+        data_key = mx.sym.Variable(name="data_key")
+        feat_key = mx.sym.Variable(name="feat_key")
+
+        # shared convolutional layers
+        conv_feat = self.get_resnet_dcn_50(data)
+
+        # deeplab
+        fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
+        fc6_weight = mx.symbol.Variable('fc6_weight', lr_mult=1.0)
+
+        fc6 = mx.symbol.Convolution(
+            data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6", bias=fc6_bias, weight=fc6_weight,
+            workspace=self.workspace)
+        relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='relu_fc6')
+
+        score_bias = mx.symbol.Variable('score_bias', lr_mult=2.0)
+        score_weight = mx.symbol.Variable('score_weight', lr_mult=1.0)
+
+        score = mx.symbol.Convolution(
+            data=relu_fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="score", bias=score_bias,
+            weight=score_weight, workspace=self.workspace)
+
+        upsampling = mx.symbol.Deconvolution(
+            data=score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16), num_group=num_classes, no_bias=True,
+            name='upsampling', attr={'lr_mult': '0.0'}, workspace=self.workspace)
+
+        croped_score = mx.symbol.Crop(*[upsampling, data], offset=(8, 8), name='croped_score')
+
+        # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
+        #                                   ignore_label=255, name="softmax")
+
+        group = mx.sym.Group([data_key, feat_key, conv_feat, croped_score])
+        self.sym = group
+        return group
+
+    def get_cur_image_test_symbol(self, cfg):
+
+        # config alias for convenient
+        num_classes = cfg.dataset.NUM_CLASSES
+        num_reg_classes = (2 if cfg.CLASS_AGNOSTIC else num_classes)
+        num_anchors = cfg.network.NUM_ANCHORS
+
+        data_cur = mx.sym.Variable(name="data")
+        data_key = mx.sym.Variable(name="data_key")
+        conv_feat = mx.sym.Variable(name="feat_key")
+
+        # shared convolutional layers
+        flow, scale_map = self.get_flownet(data_cur, data_key)
+        flow_grid = mx.sym.GridGenerator(data=flow, transform_type='warp', name='flow_grid')
+        conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid, name='warping_feat')
+        # conv_feat = conv_feat * scale_map
+
+        # deeplab
+        fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
+        fc6_weight = mx.symbol.Variable('fc6_weight', lr_mult=1.0)
+
+        fc6 = mx.symbol.Convolution(
+            data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6", bias=fc6_bias, weight=fc6_weight,
+            workspace=self.workspace)
+        relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='relu_fc6')
+
+        score_bias = mx.symbol.Variable('score_bias', lr_mult=2.0)
+        score_weight = mx.symbol.Variable('score_weight', lr_mult=1.0)
+
+        score = mx.symbol.Convolution(
+            data=fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="score", bias=score_bias,
+            weight=score_weight, workspace=self.workspace)
+
+        upsampling = mx.symbol.Deconvolution(
+            data=score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16), num_group=num_classes, no_bias=True,
+            name='upsampling', attr={'lr_mult': '0.0'}, workspace=self.workspace)
+
+        croped_score = mx.symbol.Crop(*[upsampling, data_cur], offset=(8, 8), name='croped_score')
+
+        # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
+        #                                   ignore_label=255, name="softmax")
+
+        group = mx.sym.Group([data_key, conv_feat, croped_score])
+        self.sym = group
+        return group
+
     def get_key_test_symbol(self, cfg):
 
         # config alias for convenient
