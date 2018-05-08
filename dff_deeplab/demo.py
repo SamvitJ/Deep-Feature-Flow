@@ -136,11 +136,11 @@ def main():
     pprint.pprint(config)
     config.symbol = 'resnet_v1_101_flownet_deeplab'
     model1 = '/../model/rfcn_dff_flownet_vid'
-    # model2 = '/../model/deeplab_dcn_cityscapes'
+    # model2 = '/../model/trained/resnet-18*-0092-0000.params'
     model2 = '/../output/dff_deeplab/cityscapes/resnet_v1_101_flownet_cityscapes_deeplab_end2end_ohem/leftImg8bit_train/' + model_name + '/dff_deeplab_vid'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
-    key_sym = sym_instance.get_key_test_symbol(config)
-    cur_sym = sym_instance.get_cur_test_symbol(config)
+    key_sym = sym_instance.get_key_image_test_symbol(config)
+    cur_sym = sym_instance.get_cur_image_test_symbol(config)
 
     # load demo data
     if has_gt:
@@ -223,13 +223,13 @@ def main():
         if j % key_frame_interval == 0:
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['18_croped_score_output'], axis=1).asnumpy() for output in output_all]
         else:
             data_batch.data[0][-1] = feat
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(cur_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['correction_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['18_croped_score_output'], axis=1).asnumpy() for output in output_all]
 
     print "warmup done"
     # test
@@ -248,14 +248,14 @@ def main():
             print '\n\nframe {} (key)'.format(idx)
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['18_croped_score_output'], axis=1).asnumpy() for output in output_all]
         else:
             print '\nframe {} (intermediate)'.format(idx)
             data_batch.data[0][-1] = feat
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(cur_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['correction_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['18_croped_score_output'], axis=1).asnumpy() for output in output_all]
 
         elapsed = toc()
         time += elapsed

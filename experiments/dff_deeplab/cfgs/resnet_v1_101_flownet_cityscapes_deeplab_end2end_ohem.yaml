@@ -12,7 +12,7 @@ default:
 network:
   pretrained: "./model/rfcn_dff_flownet_vid"
   pretrained_flow: "./model/deeplab_dcn_cityscapes"
-  pretrained_ec: "./model/trained/resnet-18" # "./model/trained/resnet-50"
+  pretrained_ec: "./model/trained/resnet-18u-0067"
   pretrained_epoch: 0
   PIXEL_MEANS:
   - 103.06
@@ -37,8 +37,19 @@ network:
   - fc6
   - score
   - upsampling
-  # res-18
-  - "18_"
+  # res-18 feat
+  - 18_bn_data
+  - 18_conv0
+  - 18_bn0
+  - 18_relu0
+  - 18_stage1
+  - 18_stage2
+  - 18_stage3
+  # res-18 task
+  - 18_feat_upsampling
+  - 18_fc6
+  - 18_score
+  - 18_upsampling
   # flow
   - ReLU
   - flow_conv1
@@ -77,9 +88,9 @@ TRAIN:
   # typically we will use 4000 warmup step for single GPU
   warmup_step: 1000
   begin_epoch: 0
-  end_epoch: 53
+  end_epoch: 100
   lr: 0.0005
-  lr_step: '53'
+  lr_step: '100'
   model_prefix: "dff_deeplab_vid"
   # whether flip image
   FLIP: false
