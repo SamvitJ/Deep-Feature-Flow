@@ -139,8 +139,8 @@ def main():
     model2 = '/../model/trained/resnet-34s-0114'
     # model2 = '/../output/dff_deeplab/cityscapes/resnet_v1_101_flownet_cityscapes_deeplab_end2end_ohem/leftImg8bit_train/' + model_name + '/dff_deeplab_vid'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
-    key_sym = sym_instance.get_key_test_symbol(config)
-    cur_sym = sym_instance.get_cur_test_symbol(config)
+    key_sym = sym_instance.get_key_image_test_symbol(config)
+    cur_sym = sym_instance.get_cur_image_test_symbol(config)
 
     # load demo data
     if has_gt:
