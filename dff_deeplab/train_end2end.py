@@ -57,7 +57,7 @@ def train_net(args, ctx, pretrained, pretrained_flow, pretrained_ec, epoch, pref
     # load symbol
     shutil.copy2(os.path.join(curr_path, 'symbols', config.symbol + '.py'), final_output_path)
     sym_instance = eval(config.symbol + '.' + config.symbol)()
-    sym = sym_instance.get_train_symbol(config)
+    sym = sym_instance.get_image_train_symbol(config)
     # feat_sym = sym.get_internals()['rpn_cls_score_output']
 
     # setup multi-gpu
@@ -105,7 +105,7 @@ def train_net(args, ctx, pretrained, pretrained_flow, pretrained_ec, epoch, pref
         arg_params_flow, aux_params_flow = load_param(pretrained_flow, epoch, convert=True)
         arg_params.update(arg_params_flow)
         aux_params.update(aux_params_flow)
-        arg_params_ec, aux_params_ec = load_param(pretrained_ec, epoch, convert=True, argprefix='18_')
+        arg_params_ec, aux_params_ec = load_param(pretrained_ec, epoch, convert=True, argprefix='34_')
         arg_params.update(arg_params_ec)
         aux_params.update(aux_params_ec)
         sym_instance.init_weight(config, arg_params, aux_params)

@@ -127,14 +127,77 @@ class resnet_v1_101_flownet_deeplab(Symbol):
                 body = self.residual_unit(body, filter_list[i+1], (1,1), True, name=prefix + 'stage%d_unit%d' % (i + 1, j + 2),
                                      bottle_neck=bottle_neck, workspace=workspace, memonger=memonger)
 
-        bn1 = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=prefix + 'bn1')
-        relu1 = mx.sym.Activation(data=bn1, act_type='relu', name=prefix + 'relu1')
+        # bn1 = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=prefix + 'bn1')
+        # relu1 = mx.sym.Activation(data=bn1, act_type='relu', name=prefix + 'relu1')
 
         # # Although kernel is not used here when global_pool=True, we should put one
         # pool1 = mx.symbol.Pooling(data=relu1, global_pool=True, kernel=(7, 7), pool_type='avg', name='pool1')
         # flat = mx.symbol.Flatten(data=pool1)
         # fc1 = mx.symbol.FullyConnected(data=flat, num_hidden=num_classes, name='fc1')
-        return relu1 # mx.symbol.SoftmaxOutput(data=fc1, name='softmax')
+        return body # mx.symbol.SoftmaxOutput(data=fc1, name='softmax')
+
+    def get_resnet_dcn_34_conv5(self, feat):
+        # shortcut 1
+        res5a_branch1 = mx.symbol.Convolution(name='34_res5a_branch1', data=feat, num_filter=512, pad=(0, 0),
+                                              kernel=(1, 1), stride=(2, 2), no_bias=True)
+        bn5a_branch1 = mx.symbol.BatchNorm(name='34_bn5a_branch1', data=res5a_branch1, use_global_stats=True, fix_gamma=False, eps=self.eps)
+        scale5a_branch1 = bn5a_branch1
+
+        # unit 1
+        res5a_branch2a = mx.symbol.Convolution(name='34_res5a_branch2a', data=feat, num_filter=512, pad=(1, 1),
+                                               kernel=(3, 3), stride=(2, 2), no_bias=True)
+        bn5a_branch2a = mx.symbol.BatchNorm(name='34_bn5a_branch2a', data=res5a_branch2a, use_global_stats=True,
+                                            fix_gamma=False, eps=self.eps)
+        scale5a_branch2a = bn5a_branch2a
+        res5a_branch2a_relu = mx.symbol.Activation(name='34_res5a_branch2a_relu', data=scale5a_branch2a, act_type='relu')
+        res5a_branch2b_offset = mx.symbol.Convolution(name='34_res5a_branch2b_offset', data = res5a_branch2a_relu,
+                                                      num_filter=72, pad=(2, 2), kernel=(3, 3), stride=(1, 1), dilate=(2, 2), cudnn_off=True)
+        res5a_branch2b = mx.contrib.symbol.DeformableConvolution(name='34_res5a_branch2b', data=res5a_branch2a_relu, offset=res5a_branch2b_offset,
+                                                                 num_filter=512, pad=(2, 2), kernel=(3, 3), num_deformable_group=4,
+                                                                 stride=(1, 1), dilate=(2, 2), no_bias=True)
+        bn5a_branch2b = mx.symbol.BatchNorm(name='34_bn5a_branch2b', data=res5a_branch2b, use_global_stats=True,
+                                            fix_gamma=False, eps=self.eps)
+        scale5a_branch2b = bn5a_branch2b
+        res5a = mx.symbol.broadcast_add(name='34_res5a', *[scale5a_branch1, scale5a_branch2b])
+        res5a_relu = mx.symbol.Activation(name='34_res5a_relu', data=res5a, act_type='relu')
+
+        # unit 2
+        res5b_branch2a = mx.symbol.Convolution(name='34_res5b_branch2a', data=res5a_relu, num_filter=512, pad=(1, 1),
+                                               kernel=(3, 3), stride=(1, 1), no_bias=True)
+        bn5b_branch2a = mx.symbol.BatchNorm(name='34_bn5b_branch2a', data=res5b_branch2a, use_global_stats=True,
+                                            fix_gamma=False, eps=self.eps)
+        scale5b_branch2a = bn5b_branch2a
+        res5b_branch2a_relu = mx.symbol.Activation(name='34_res5b_branch2a_relu', data=scale5b_branch2a, act_type='relu')
+        res5b_branch2b_offset = mx.symbol.Convolution(name='34_res5b_branch2b_offset', data = res5b_branch2a_relu,
+                                                      num_filter=72, pad=(2, 2), kernel=(3, 3), stride=(1, 1), dilate=(2, 2), cudnn_off=True)
+        res5b_branch2b = mx.contrib.symbol.DeformableConvolution(name='34_res5b_branch2b', data=res5b_branch2a_relu, offset=res5b_branch2b_offset,
+                                                                 num_filter=512, pad=(2, 2), kernel=(3, 3), num_deformable_group=4,
+                                                                 stride=(1, 1), dilate=(2, 2), no_bias=True)
+        bn5b_branch2b = mx.symbol.BatchNorm(name='34_bn5b_branch2b', data=res5b_branch2b, use_global_stats=True,
+                                            fix_gamma=False, eps=self.eps)
+        scale5b_branch2b = bn5b_branch2b
+        res5b = mx.symbol.broadcast_add(name='34_res5b', *[res5a_relu, scale5b_branch2b])
+        res5b_relu = mx.symbol.Activation(name='34_res5b_relu', data=res5b, act_type='relu')
+
+        # unit 3
+        res5c_branch2a = mx.symbol.Convolution(name='34_res5c_branch2a', data=res5b_relu, num_filter=512, pad=(1, 1),
+                                               kernel=(3, 3), stride=(1, 1), no_bias=True)
+        bn5c_branch2a = mx.symbol.BatchNorm(name='34_bn5c_branch2a', data=res5c_branch2a, use_global_stats=True,
+                                            fix_gamma=False, eps=self.eps)
+        scale5c_branch2a = bn5c_branch2a
+        res5c_branch2a_relu = mx.symbol.Activation(name='34_res5c_branch2a_relu', data=scale5c_branch2a, act_type='relu')
+        res5c_branch2b_offset = mx.symbol.Convolution(name='34_res5c_branch2b_offset', data = res5c_branch2a_relu,
+                                                      num_filter=72, pad=(2, 2), kernel=(3, 3), stride=(1, 1), dilate=(2, 2), cudnn_off=True)
+        res5c_branch2b = mx.contrib.symbol.DeformableConvolution(name='34_res5c_branch2b', data=res5c_branch2a_relu, offset=res5c_branch2b_offset,
+                                                                 num_filter=512, pad=(2, 2), kernel=(3, 3), num_deformable_group=4,
+                                                                 stride=(1, 1), dilate=(2, 2), no_bias=True)
+        bn5c_branch2b = mx.symbol.BatchNorm(name='34_bn5c_branch2b', data=res5c_branch2b, use_global_stats=True,
+                                            fix_gamma=False, eps=self.eps)
+        scale5c_branch2b = bn5c_branch2b
+        res5c = mx.symbol.broadcast_add(name='34_res5c', *[res5b_relu, scale5c_branch2b])
+        res5c_relu = mx.symbol.Activation(name='34_res5c_relu', data=res5c, act_type='relu')
+
+        return res5c_relu
 
     def get_resnet_dcn_50(self, data):
         conv1 = mx.symbol.Convolution(name='50_conv1', data=data, num_filter=64, pad=(3, 3), kernel=(7, 7), stride=(2, 2),
@@ -1727,32 +1790,36 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         seg_cls_gt = mx.symbol.Variable(name='label')
 
         # conv_feat = self.get_resnet_dcn_50(data)
-        conv_feat = self.resnet(data_sym=data, prefix="18_", units=[2, 2, 2, 2], num_stages=4,
+        conv_feat = self.resnet(data_sym=data, prefix="34_", units=[3, 4, 6], num_stages=3,
             filter_list=[64, 64, 128, 256, 512], num_classes=1000, data_type="imagenet",
             bottle_neck=False, bn_mom=0.9, workspace=512, memonger=False)
+        conv_feat = self.get_resnet_dcn_34_conv5(conv_feat)
+        conv_feat = mx.symbol.Deconvolution(data=conv_feat, num_filter=2048, kernel=(4, 4), stride=(2, 2), pad=(1, 1),
+            no_bias=True, name='34_feat_upsampling', workspace=self.workspace,
+            attr={'lr_mult': '2.0'})
 
         # subsequent fc layers by haozhi
-        fc6_bias = mx.symbol.Variable('18_fc6_bias', lr_mult=2.0)
-        fc6_weight = mx.symbol.Variable('18_fc6_weight', lr_mult=1.0)
+        fc6_bias = mx.symbol.Variable('34_fc6_bias', lr_mult=2.0)
+        fc6_weight = mx.symbol.Variable('34_fc6_weight', lr_mult=1.0)
 
-        fc6 = mx.symbol.Convolution(data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="18_fc6",
+        fc6 = mx.symbol.Convolution(data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="34_fc6",
                                     bias=fc6_bias, weight=fc6_weight, workspace=self.workspace)
-        relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='18_relu_fc6')
+        relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='34_relu_fc6')
 
-        score_bias = mx.symbol.Variable('18_score_bias', lr_mult=2.0)
-        score_weight = mx.symbol.Variable('18_score_weight', lr_mult=1.0)
+        score_bias = mx.symbol.Variable('34_score_bias', lr_mult=2.0)
+        score_weight = mx.symbol.Variable('34_score_weight', lr_mult=1.0)
 
-        score = mx.symbol.Convolution(data=relu_fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="18_score",
+        score = mx.symbol.Convolution(data=relu_fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="34_score",
                                       bias=score_bias, weight=score_weight, workspace=self.workspace)
 
-        upsampling = mx.symbol.Deconvolution(data=score, num_filter=num_classes, kernel=(64, 64), stride=(32, 32),
-                                             num_group=num_classes, no_bias=True, name='18_upsampling',
-                                             attr={'lr_mult': '0.0'}, workspace=self.workspace)
+        upsampling = mx.symbol.Deconvolution(data=score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16),
+                                             num_group=num_classes, no_bias=True, name='34_upsampling',
+                                             attr={'lr_mult': '1.0'}, workspace=self.workspace)
 
-        croped_score = mx.symbol.Crop(*[upsampling, data], offset=(8, 8), name='18_croped_score')
+        croped_score = mx.symbol.Crop(*[upsampling, data], offset=(8, 8), name='34_croped_score')
 
         softmax = mx.symbol.SoftmaxOutput(data=croped_score, label=seg_cls_gt, normalization='valid', multi_output=True,
-                                          use_ignore=True, ignore_label=255, name="18_softmax")
+                                          use_ignore=True, ignore_label=255, name="34_softmax")
 
         group = mx.sym.Group([softmax, data_ref, eq_flag])
         self.sym = group
@@ -1871,6 +1938,101 @@ class resnet_v1_101_flownet_deeplab(Symbol):
                                           use_ignore=True, ignore_label=255, name="softmax")
 
         group = mx.sym.Group([softmax, data_ref, eq_flag])
+        self.sym = group
+        return group
+
+    def get_key_image_test_symbol(self, cfg):
+
+        # config alias for convenient
+        num_classes = cfg.dataset.NUM_CLASSES
+        num_reg_classes = (2 if cfg.CLASS_AGNOSTIC else num_classes)
+        num_anchors = cfg.network.NUM_ANCHORS
+
+        data = mx.sym.Variable(name="data")
+        data_key = mx.sym.Variable(name="data_key")
+        feat_key = mx.sym.Variable(name="feat_key")
+
+        # shared convolutional layers
+        conv_feat = self.resnet(data_sym=data, prefix="34_", units=[3, 4, 6], num_stages=3,
+            filter_list=[64, 64, 128, 256, 512], num_classes=1000, data_type="imagenet",
+            bottle_neck=False, bn_mom=0.9, workspace=512, memonger=False)
+        conv_feat = self.get_resnet_dcn_34_conv5(conv_feat)
+        conv_feat = mx.symbol.Deconvolution(data=conv_feat, num_filter=2048, kernel=(4, 4), stride=(2, 2), pad=(1, 1),
+            no_bias=True, name='34_feat_upsampling', workspace=self.workspace,
+            attr={'lr_mult': '2.0'})
+
+        # deeplab
+        fc6_bias = mx.symbol.Variable('34_fc6_bias', lr_mult=2.0)
+        fc6_weight = mx.symbol.Variable('34_fc6_weight', lr_mult=1.0)
+
+        fc6 = mx.symbol.Convolution(
+            data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="34_fc6", bias=fc6_bias, weight=fc6_weight,
+            workspace=self.workspace)
+        relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='34_relu_fc6')
+
+        score_bias = mx.symbol.Variable('34_score_bias', lr_mult=2.0)
+        score_weight = mx.symbol.Variable('34_score_weight', lr_mult=1.0)
+
+        score = mx.symbol.Convolution(
+            data=relu_fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="34_score", bias=score_bias,
+            weight=score_weight, workspace=self.workspace)
+
+        upsampling = mx.symbol.Deconvolution(
+            data=score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16), num_group=num_classes, no_bias=True,
+            name='34_upsampling', attr={'lr_mult': '0.0'}, workspace=self.workspace)
+
+        croped_score = mx.symbol.Crop(*[upsampling, data], offset=(8, 8), name='34_croped_score')
+
+        # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
+        #                                   ignore_label=255, name="softmax")
+
+        group = mx.sym.Group([data_key, feat_key, conv_feat, croped_score])
+        self.sym = group
+        return group
+
+    def get_cur_image_test_symbol(self, cfg):
+
+        # config alias for convenient
+        num_classes = cfg.dataset.NUM_CLASSES
+        num_reg_classes = (2 if cfg.CLASS_AGNOSTIC else num_classes)
+        num_anchors = cfg.network.NUM_ANCHORS
+
+        data_cur = mx.sym.Variable(name="data")
+        data_key = mx.sym.Variable(name="data_key")
+        conv_feat = mx.sym.Variable(name="feat_key")
+
+        # shared convolutional layers
+        flow, scale_map = self.get_flownet(data_cur, data_key)
+        flow_grid = mx.sym.GridGenerator(data=flow, transform_type='warp', name='flow_grid')
+        conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid, name='warping_feat')
+        # conv_feat = conv_feat * scale_map
+
+        # deeplab
+        fc6_bias = mx.symbol.Variable('34_fc6_bias', lr_mult=2.0)
+        fc6_weight = mx.symbol.Variable('34_fc6_weight', lr_mult=1.0)
+
+        fc6 = mx.symbol.Convolution(
+            data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="34_fc6", bias=fc6_bias, weight=fc6_weight,
+            workspace=self.workspace)
+        relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='34_relu_fc6')
+
+        score_bias = mx.symbol.Variable('34_score_bias', lr_mult=2.0)
+        score_weight = mx.symbol.Variable('34_score_weight', lr_mult=1.0)
+
+        score = mx.symbol.Convolution(
+            data=fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="34_score", bias=score_bias,
+            weight=score_weight, workspace=self.workspace)
+
+        upsampling = mx.symbol.Deconvolution(
+            data=score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16), num_group=num_classes, no_bias=True,
+            name='34_upsampling', attr={'lr_mult': '0.0'}, workspace=self.workspace)
+
+        croped_score = mx.symbol.Crop(*[upsampling, data_cur], offset=(8, 8), name='34_croped_score')
+
+        # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
+        #                                   ignore_label=255, name="softmax")
+
+        group = mx.sym.Group([data_key, conv_feat, croped_score])
         self.sym = group
         return group
 
@@ -2119,6 +2281,74 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         # init = mx.init.Initializer()
         # init._init_bilinear('upsample_weight', arg_params['upsampling_weight'])
 
+        # Res-34 conv5
+        arg_params['34_res5a_branch1_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['34_res5a_branch1_weight'])
+        arg_params['34_bn5a_branch1_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['34_bn5a_branch1_gamma'])
+        arg_params['34_bn5a_branch1_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['34_bn5a_branch1_beta'])
+
+        aux_params['34_bn5a_branch1_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['34_bn5a_branch1_moving_mean'])
+        aux_params['34_bn5a_branch1_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['34_bn5a_branch1_moving_var'])
+
+        # unit 1
+        arg_params['34_res5a_branch2a_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['34_res5a_branch2a_weight'])
+        arg_params['34_bn5a_branch2a_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['34_bn5a_branch2a_gamma'])
+        arg_params['34_bn5a_branch2a_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['34_bn5a_branch2a_beta'])
+
+        aux_params['34_bn5a_branch2a_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['34_bn5a_branch2a_moving_mean'])
+        aux_params['34_bn5a_branch2a_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['34_bn5a_branch2a_moving_var'])
+
+        arg_params['34_res5a_branch2b_offset_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['34_res5a_branch2b_offset_weight'])
+        arg_params['34_res5a_branch2b_offset_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['34_res5a_branch2b_offset_bias'])
+        arg_params['34_res5a_branch2b_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['34_res5a_branch2b_weight'])
+        arg_params['34_bn5a_branch2b_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['34_bn5a_branch2b_gamma'])
+        arg_params['34_bn5a_branch2b_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['34_bn5a_branch2b_beta'])
+
+        aux_params['34_bn5a_branch2b_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['34_bn5a_branch2b_moving_mean'])
+        aux_params['34_bn5a_branch2b_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['34_bn5a_branch2b_moving_var'])
+
+        # unit 2
+        arg_params['34_res5b_branch2a_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['34_res5b_branch2a_weight'])
+        arg_params['34_bn5b_branch2a_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['34_bn5b_branch2a_gamma'])
+        arg_params['34_bn5b_branch2a_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['34_bn5b_branch2a_beta'])
+
+        aux_params['34_bn5b_branch2a_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['34_bn5b_branch2a_moving_mean'])
+        aux_params['34_bn5b_branch2a_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['34_bn5b_branch2a_moving_var'])
+
+        arg_params['34_res5b_branch2b_offset_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['34_res5b_branch2b_offset_weight'])
+        arg_params['34_res5b_branch2b_offset_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['34_res5b_branch2b_offset_bias'])
+        arg_params['34_res5b_branch2b_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['34_res5b_branch2b_weight'])
+        arg_params['34_bn5b_branch2b_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['34_bn5b_branch2b_gamma'])
+        arg_params['34_bn5b_branch2b_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['34_bn5b_branch2b_beta'])
+
+        aux_params['34_bn5b_branch2b_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['34_bn5b_branch2b_moving_mean'])
+        aux_params['34_bn5b_branch2b_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['34_bn5b_branch2b_moving_var'])
+
+        # unit 3
+        arg_params['34_res5c_branch2a_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['34_res5c_branch2a_weight'])
+        arg_params['34_bn5c_branch2a_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['34_bn5c_branch2a_gamma'])
+        arg_params['34_bn5c_branch2a_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['34_bn5c_branch2a_beta'])
+
+        aux_params['34_bn5c_branch2a_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['34_bn5c_branch2a_moving_mean'])
+        aux_params['34_bn5c_branch2a_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['34_bn5c_branch2a_moving_var'])
+
+        arg_params['34_res5c_branch2b_offset_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['34_res5c_branch2b_offset_weight'])
+        arg_params['34_res5c_branch2b_offset_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['34_res5c_branch2b_offset_bias'])
+        arg_params['34_res5c_branch2b_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['34_res5c_branch2b_weight'])
+        arg_params['34_bn5c_branch2b_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['34_bn5c_branch2b_gamma'])
+        arg_params['34_bn5c_branch2b_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['34_bn5c_branch2b_beta'])
+
+        aux_params['34_bn5c_branch2b_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['34_bn5c_branch2b_moving_mean'])
+        aux_params['34_bn5c_branch2b_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['34_bn5c_branch2b_moving_var'])
+
+        # Res-34 task
+        arg_params['34_feat_upsampling_weight'] = arg_params['34_feat_upsampling_weight']
+
+        arg_params['34_fc6_weight'] = arg_params['34_fc6_weight']
+        arg_params['34_fc6_bias'] = arg_params['34_fc6_bias']
+        arg_params['34_score_weight'] = arg_params['34_score_weight']
+        arg_params['34_score_bias'] = arg_params['34_score_bias']
+        arg_params['34_upsampling_weight'] = arg_params['34_upsampling_weight']
+
         # arg_params['pre_bn1_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['pre_bn1_gamma'])
         # arg_params['pre_bn1_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['pre_bn1_beta'])
         # aux_params['pre_bn1_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['pre_bn1_moving_mean'])
@@ -2126,8 +2356,8 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         # arg_params['pre_conv_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['pre_conv_weight'])
         # arg_params['pre_conv_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['pre_conv_bias'])
         # arg_params['curr_upsampling_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['curr_upsampling_weight'])
-        arg_params['corr_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['corr_weight'])
-        arg_params['corr_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['corr_bias'])
+        # arg_params['corr_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['corr_weight'])
+        # arg_params['corr_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['corr_bias'])
 
         # # 3x3 conv init
         # conv_shape = self.arg_shape_dict['corr_weight']
