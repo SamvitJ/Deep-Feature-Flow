@@ -79,15 +79,15 @@ TRAIN:
   # typically we will use 4000 warmup step for single GPU
   warmup_step: 1000
   begin_epoch: 0
-  end_epoch: 53
+  end_epoch: 100
   lr: 0.0005
-  lr_step: '53'
+  lr_step: '100'
   model_prefix: "dff_deeplab_vid"
   # whether flip image
   FLIP: false
   # size of images for each device
   BATCH_IMAGES: 1
-  KEY_INTERVAL: 5
+  KEY_INTERVAL: 3
   # e2e changes behavior of anchor loader and metric
   END2END: true
   # wheter crop image during training

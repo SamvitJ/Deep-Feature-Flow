@@ -229,7 +229,7 @@ def main():
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(cur_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['correction_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
     print "warmup done"
     # test
@@ -255,7 +255,7 @@ def main():
             data_batch.provide_data[0][-1] = ('feat_key', feat.shape)
             # scores, boxes, data_dict, _ = im_detect(cur_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(cur_predictor, data_batch)
-            output_all = [mx.ndarray.argmax(output['correction_output'], axis=1).asnumpy() for output in output_all]
+            output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
 
         elapsed = toc()
         time += elapsed
