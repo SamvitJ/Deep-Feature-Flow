@@ -35,16 +35,10 @@ from utils.show_boxes import show_boxes, draw_boxes
 from utils.tictoc import tic, toc
 from nms.nms import py_nms_wrapper, cpu_nms_wrapper, gpu_nms_wrapper
 
-ref_img_prefix = 'frankfurt_000000_000294'
-ref_pred_prefix = 'seg_frankfurt_000000_012000'
-
 def parse_args():
     parser = argparse.ArgumentParser(description='Show Deep Feature Flow demo')
     parser.add_argument('-i', '--interval', type=int, default=1)
     parser.add_argument('-e', '--num_ex', type=int, default=10)
-    parser.add_argument('--gt', dest='has_gt', action='store_true')
-    parser.add_argument('--no_gt', dest='has_gt', action='store_false')
-    parser.set_defaults(has_gt=True)
     args = parser.parse_args()
     return args
 
@@ -57,15 +51,6 @@ def fast_hist(pred, label, n):
 
 def per_class_iu(hist):
     return np.true_divide(np.diag(hist), (hist.sum(1) + hist.sum(0) - np.diag(hist)))
-
-def get_label_if_available(label_files, im_filename):
-    for lb_file in label_files:
-        _, lb_filename = os.path.split(lb_file)
-        lb_filename = lb_filename[:len(ref_img_prefix)]
-        if im_filename.startswith(lb_filename):
-            print 'label {}'.format(lb_filename)
-            return lb_file
-    return None
 
 def getpallete(num_cls):
     """
@@ -128,18 +113,14 @@ def main():
 
     # settings
     num_classes = 19
-    has_gt = args.has_gt
     interv = args.interval
     num_ex = args.num_ex
 
     # load demo data
-    if has_gt:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_all_i' + str(interv) + '/*.png'))
-        image_names = image_names[: interv * num_ex]
-        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_labels_all/*.png'))
-    else:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt/*.png'))
-        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_preds/*.png'))
+    image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_all_i' + str(interv) + '/*.png'))
+    image_names = image_names[: interv * num_ex]
+    label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_labels_all/*.png'))
+
     output_dir = cur_path + '/../demo/deeplab_dff/'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -238,18 +219,16 @@ def main():
         segmentation_result.save(output_dir + '/seg_' + im_filename)
 
         label = None
-        if has_gt:
-            # if annotation available for frame
-            _, lb_filename = os.path.split(label_files[lb_idx])
-            if im_filename[:len(ref_img_prefix)] == lb_filename[:len(ref_img_prefix)]:
-                print 'label {}'.format(lb_filename[:len(ref_img_prefix)])
-                label = np.asarray(Image.open(label_files[lb_idx]))
-                if lb_idx < len(label_files) - 1:
-                    lb_idx += 1
-        else:
-            _, lb_filename = os.path.split(label_files[idx])
-            print 'label {}'.format(lb_filename[:len(ref_pred_prefix)])
-            label = np.asarray(Image.open(label_files[idx]))
+
+        _, lb_filename = os.path.split(label_files[lb_idx])
+        im_comps = im_filename.split('_')
+        lb_comps = lb_filename.split('_')
+        # if annotation available for frame
+        if im_comps[1] == lb_comps[1] and im_comps[2] == lb_comps[2]:
+            print 'label {}'.format(lb_filename)
+            label = np.asarray(Image.open(label_files[lb_idx]))
+            if lb_idx < len(label_files) - 1:
+                lb_idx += 1
 
         if label is not None:
             curr_hist = fast_hist(pred.flatten(), label.flatten(), num_classes)
