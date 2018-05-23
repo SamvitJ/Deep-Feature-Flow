@@ -134,12 +134,12 @@ def main():
 
     # load demo data
     if has_gt:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_all_i' + str(interv) + '/*.png'))
+        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_all_i' + str(interv) + '/*.png'))
         image_names = image_names[: interv * num_ex]
-        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_labels_all/*.png'))
+        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_labels_all/*.png'))
     else:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
-        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
+        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt/*.png'))
+        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_preds/*.png'))
     output_dir = cur_path + '/../demo/deeplab_dff/'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
