@@ -18,6 +18,7 @@ from config.config import config, update_config
 from utils.image import resize, transform
 from PIL import Image
 import numpy as np
+import re
 
 # get config
 os.environ['PYTHONUNBUFFERED'] = '1'
@@ -64,33 +65,33 @@ def getpallete(num_cls):
 
     pallete_raw[6, :] =  [111,  74,   0]
     pallete_raw[7, :] =  [ 81,   0,  81]
-    pallete_raw[8, :] =  [128,  64, 128]
-    pallete_raw[9, :] =  [244,  35, 232]
+    pallete_raw[8, :] =  [128,  64, 128] # [128,  64, 128]  # Road
+    pallete_raw[9, :] =  [  0,   0, 192] # [244,  35, 232]  # Sidewalk
     pallete_raw[10, :] =  [250, 170, 160]
     pallete_raw[11, :] = [230, 150, 140]
-    pallete_raw[12, :] = [ 70,  70,  70]
-    pallete_raw[13, :] = [102, 102, 156]
-    pallete_raw[14, :] = [190, 153, 153]
+    pallete_raw[12, :] = [128,   0,   0] # [ 70,  70,  70]  # Building
+    pallete_raw[13, :] = [ 64, 192,   0] # [102, 102, 156]  # Wall
+    pallete_raw[14, :] = [64,   64, 128] # [190, 153, 153]  # Fence
     pallete_raw[15, :] = [180, 165, 180]
     pallete_raw[16, :] = [150, 100, 100]
     pallete_raw[17, :] = [150, 120,  90]
-    pallete_raw[18, :] = [153, 153, 153]
+    pallete_raw[18, :] = [192, 192, 128] # [153, 153, 153]  # Pole
     pallete_raw[19, :] = [153, 153, 153]
-    pallete_raw[20, :] = [250, 170,  30]
-    pallete_raw[21, :] = [220, 220,   0]
-    pallete_raw[22, :] = [107, 142,  35]
-    pallete_raw[23, :] = [152, 251, 152]
-    pallete_raw[24, :] = [ 70, 130, 180]
-    pallete_raw[25, :] = [220,  20,  60]
-    pallete_raw[26, :] = [255,   0,   0]
-    pallete_raw[27, :] = [  0,   0, 142]
-    pallete_raw[28, :] = [  0,   0,  70]
-    pallete_raw[29, :] = [  0,  60, 100]
+    pallete_raw[20, :] = [  0,  64,  64] # [250, 170,  30]  # Traffic Light
+    pallete_raw[21, :] = [192, 128, 128] # [220, 220,   0]  # Traffic Sign
+    pallete_raw[22, :] = [128, 128,   0] # [107, 142,  35]  # Tree / Vegetation
+    pallete_raw[23, :] = [  0, 128,   0] # [152, 251, 152]  # Grass / Terrain
+    pallete_raw[24, :] = [128, 128, 128] # [ 70, 130, 180]  # Sky
+    pallete_raw[25, :] = [64,   64,   0] # [220,  20,  60]  # Person
+    pallete_raw[26, :] = [  0, 128, 192] # [255,   0,   0]  # Rider
+    pallete_raw[27, :] = [ 64,   0, 128] # [  0,   0, 142]  # Car
+    pallete_raw[28, :] = [ 64, 128, 192] # [  0,   0,  70]  # Truck
+    pallete_raw[29, :] = [192, 128, 192] # [  0,  60, 100]  # Bus
     pallete_raw[30, :] = [  0,   0,  90]
     pallete_raw[31, :] = [  0,   0, 110]
-    pallete_raw[32, :] = [  0,  80, 100]
-    pallete_raw[33, :] = [  0,   0, 230]
-    pallete_raw[34, :] = [119,  11,  32]
+    pallete_raw[32, :] = [192,  64, 128] # [  0,  80, 100]  # Train
+    pallete_raw[33, :] = [192,   0, 192] # [  0,   0, 230]  # Motorcycle
+    pallete_raw[34, :] = [  0,   0,   0] # [119,  11,  32]  # Bicycle
 
     train2regular = [7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33]
 
@@ -100,6 +101,51 @@ def getpallete(num_cls):
     pallete = pallete.reshape(-1)
 
     return pallete
+
+codes = {                   # CamVid                # Cityscapes
+    (128,  64, 128): 0,     # Road                  Road
+    (  0,   0, 192): 1,     # Sidewalk              Sidewalk
+    (128,   0,   0): 2,     # Building              Building
+    ( 64, 192,   0): 3,     # Wall                  Wall
+    ( 64,  64, 128): 4,     # Fence                 Fence
+    (192, 192, 128): 5,     # Column_Pole           Pole
+    (  0,  64,  64): 6,     # TrafficLight          Traffic Light
+    (192, 128, 128): 7,     # SignSymbol            Traffic Sign
+    (128, 128,   0): 8,     # Tree                  Vegetation
+    (128, 128, 128): 10,    # Sky                   Sky
+    ( 64,  64,   0): 11,    # Pedestrian            Person
+    (  0, 128, 192): 12,    # Bicyclist             Rider
+    ( 64,   0, 128): 13,    # Car                   Car
+    ( 64, 128, 192): 14,    # SUVPickupTruck        Truck
+    (192, 128, 192): 15,    # Truck_Bus             Bus
+    (192,  64, 128): 16,    # Train                 Train
+    (192,   0, 192): 17,    # MotorcycleScooter     Motorcycle
+    (  0,   0,   0): 255,   # Void                  Void
+
+    (192, 192,   0): 8,     # VegetationMisc        Vegetation
+    (192, 128,  64): 11,    # Child                 Person
+
+    (  0, 128,  64): 255,   # Bridge                Bridge
+    ( 64,   0,  64): 255,   # Tunnel                Tunnel
+
+    (192,   0, 128): 255,   # Archway
+    ( 64, 192, 128): 255,   # ParkingBlock
+    (  0,   0,  64): 255,   # TrafficCone
+    (128, 128,  64): 255,   # Misc_Text
+    (128,   0, 192): 255,   # LaneMkgsDriv
+    (128, 128, 192): 255,   # RoadShoulder
+    (192,   0,  64): 255,   # LaneMkgsNonDriv
+    ( 64, 128,  64): 255,   # Animal
+    ( 64,   0, 192): 255,   # CartLuggagePram
+    (128,  64,  64): 255,   # OtherMoving
+}
+
+def quantize(label, codes):
+    result = np.ndarray(shape=label.shape[:2], dtype=int)
+    result[:, :] = 0
+    for rgb, idx in codes.items():
+        result[(label==rgb).all(2)] = idx
+    return result
 
 def main():
     # get symbol
@@ -117,9 +163,9 @@ def main():
     num_ex = args.num_ex
 
     # load demo data
-    image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_all_i' + str(interv) + '/*.png'))
+    image_names = sorted(glob.glob(cur_path + '/../data/CamVid/data/*.png'))
     image_names = image_names[: interv * num_ex]
-    label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_data/cityscapes_frankfurt_labels_all/*.png'))
+    label_files = sorted(glob.glob(cur_path + '/../data/CamVid/labels/*.png'))
 
     output_dir = cur_path + '/../demo/deeplab_dff/'
     if not os.path.exists(output_dir):
@@ -135,7 +181,8 @@ def main():
         im = cv2.imread(im_name, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
         target_size = config.SCALES[0][0]
         max_size = config.SCALES[0][1]
-        im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        # im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        im_scale = 1.
         im_tensor = transform(im, config.network.PIXEL_MEANS)
         im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
         if idx % key_frame_interval == 0:
@@ -221,12 +268,13 @@ def main():
         label = None
 
         _, lb_filename = os.path.split(label_files[lb_idx])
-        im_comps = im_filename.split('_')
-        lb_comps = lb_filename.split('_')
+        im_comps = re.split('[_.]', im_filename)
+        lb_comps = re.split('[_.]', lb_filename)
         # if annotation available for frame
-        if im_comps[1] == lb_comps[1] and im_comps[2] == lb_comps[2]:
+        if im_comps[0] == lb_comps[0] and im_comps[1] == lb_comps[1]:
             print 'label {}'.format(lb_filename)
             label = np.asarray(Image.open(label_files[lb_idx]))
+            label = quantize(label, codes)
             if lb_idx < len(label_files) - 1:
                 lb_idx += 1
 
