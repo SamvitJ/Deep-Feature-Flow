@@ -40,6 +40,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Show Deep Feature Flow demo')
     parser.add_argument('-i', '--interval', type=int, default=1)
     parser.add_argument('-e', '--num_ex', type=int, default=10)
+    parser.add_argument('-s', '--start_num', type=int, default=0)
     args = parser.parse_args()
     return args
 
@@ -106,24 +107,24 @@ codes = {                   # CamVid                # Cityscapes
     (128,  64, 128): 0,     # Road                  Road
     (  0,   0, 192): 1,     # Sidewalk              Sidewalk
     (128,   0,   0): 2,     # Building              Building
-    ( 64, 192,   0): 3,     # Wall                  Wall
+    ( 64, 192,   0): 255,   # Wall                  Wall
     ( 64,  64, 128): 4,     # Fence                 Fence
     (192, 192, 128): 5,     # Column_Pole           Pole
-    (  0,  64,  64): 6,     # TrafficLight          Traffic Light
+    (  0,  64,  64): 255,   # TrafficLight          Traffic Light
     (192, 128, 128): 7,     # SignSymbol            Traffic Sign
     (128, 128,   0): 8,     # Tree                  Vegetation
     (128, 128, 128): 10,    # Sky                   Sky
     ( 64,  64,   0): 11,    # Pedestrian            Person
     (  0, 128, 192): 12,    # Bicyclist             Rider
     ( 64,   0, 128): 13,    # Car                   Car
-    ( 64, 128, 192): 14,    # SUVPickupTruck        Truck
-    (192, 128, 192): 15,    # Truck_Bus             Bus
-    (192,  64, 128): 16,    # Train                 Train
-    (192,   0, 192): 17,    # MotorcycleScooter     Motorcycle
+    ( 64, 128, 192): 255,   # SUVPickupTruck        Truck
+    (192, 128, 192): 255,   # Truck_Bus             Bus
+    (192,  64, 128): 255,   # Train                 Train
+    (192,   0, 192): 255,   # MotorcycleScooter     Motorcycle
     (  0,   0,   0): 255,   # Void                  Void
 
-    (192, 192,   0): 8,     # VegetationMisc        Vegetation
-    (192, 128,  64): 11,    # Child                 Person
+    (192, 192,   0): 255,   # VegetationMisc        Vegetation
+    (192, 128,  64): 255,   # Child                 Person
 
     (  0, 128,  64): 255,   # Bridge                Bridge
     ( 64,   0,  64): 255,   # Tunnel                Tunnel
@@ -142,7 +143,7 @@ codes = {                   # CamVid                # Cityscapes
 
 def quantize(label, codes):
     result = np.ndarray(shape=label.shape[:2], dtype=int)
-    result[:, :] = 0
+    result[:, :] = 255
     for rgb, idx in codes.items():
         result[(label==rgb).all(2)] = idx
     return result
@@ -161,9 +162,11 @@ def main():
     num_classes = 19
     interv = args.interval
     num_ex = args.num_ex
+    start_num = args.start_num
 
     # load demo data
     image_names = sorted(glob.glob(cur_path + '/../data/CamVid/data/*.png'))
+    image_names = image_names[start_num :]
     image_names = image_names[: interv * num_ex]
     label_files = sorted(glob.glob(cur_path + '/../data/CamVid/labels/*.png'))
 
