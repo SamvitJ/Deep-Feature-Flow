@@ -163,17 +163,19 @@ def main():
 
     # settings
     num_classes = 19
+    snip_len = 30
     interv = args.interval
     num_ex = args.num_ex
     start_num = args.start_num
 
     # load demo data
-    image_names  = sorted(glob.glob(cur_path + '/../data/CamVid/images/val/Seq05VD/*.png'))
-    image_names += sorted(glob.glob(cur_path + '/../data/CamVid/images/val/0001TP/*.png'))
-    image_names = image_names[start_num :]
-    image_names = image_names[: interv * num_ex]
+    set1_images = sorted(glob.glob(cur_path + '/../data/CamVid/data-Seq05VD/*.png'))
+    set1_images = set1_images[snip_len * start_num :]
+    set2_images = sorted(glob.glob(cur_path + '/../data/CamVid/data-0001TP_2/*.png'))
+
     label_files  = sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/Seq05VD/*.png'))
     label_files += sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/0001TP/*.png'))
+    label_files = label_files[start_num :]
 
     output_dir = cur_path + '/../demo/deeplab_dff/'
     mv_file = cur_path + '/../data/CamVid/camvid_01TP.pkl'
@@ -182,6 +184,22 @@ def main():
     key_frame_interval = interv
 
     #
+    lb_pos = 0
+    set1_ex = 171
+    set2_ex = 62
+    image_names_trunc = []
+    for i in range(min(num_ex, set1_ex - start_num)):
+        snip_pos = i * snip_len
+        offset = i % interv
+        start_pos = lb_pos - offset
+        image_names_trunc.extend(set1_images[snip_pos + start_pos : snip_pos + start_pos + interv])
+    for j in range(min(num_ex - (i+1), set2_ex)):
+        snip_pos = j * snip_len
+        offset = j % interv
+        start_pos = lb_pos - offset
+        image_names_trunc.extend(set2_images[snip_pos + start_pos : snip_pos + start_pos + interv])
+    image_names = image_names_trunc
+    # print 'len', len(image_names)
 
     data = []
     key_im_tensor = None
@@ -225,7 +243,7 @@ def main():
     nms = gpu_nms_wrapper(config.TEST.NMS, 0)
 
     # warm up
-    for j in xrange(2):
+    for j in xrange(min(interv, 2)):
         data_batch = mx.io.DataBatch(data=[data[j]], label=[], pad=0, index=0,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[j])]],
                                      provide_label=[None])
@@ -255,7 +273,7 @@ def main():
 
         tic()
         if idx % key_frame_interval == 0:
-            print '\nframe {} (key)'.format(idx)
+            print '\n\nframe {} (key)'.format(idx)
             # scores, boxes, data_dict, feat = im_detect(key_predictor, data_batch, data_names, scales, config)
             output_all, feat = im_segment(key_predictor, data_batch)
             output_all = [mx.ndarray.argmax(output['croped_score_output'], axis=1).asnumpy() for output in output_all]
