@@ -6,6 +6,51 @@ from PIL import Image
 from bbox.bbox_transform import clip_boxes
 
 
+codes = {                   # CamVid                # Cityscapes
+    (128,  64, 128): 0,     # Road                  Road
+    (  0,   0, 192): 1,     # Sidewalk              Sidewalk
+    (128,   0,   0): 2,     # Building              Building
+    ( 64, 192,   0): 255,   # Wall                  Wall
+    ( 64,  64, 128): 4,     # Fence                 Fence
+    (192, 192, 128): 5,     # Column_Pole           Pole
+    (  0,  64,  64): 255,   # TrafficLight          Traffic Light
+    (192, 128, 128): 7,     # SignSymbol            Traffic Sign
+    (128, 128,   0): 8,     # Tree                  Vegetation
+    (128, 128, 128): 10,    # Sky                   Sky
+    ( 64,  64,   0): 11,    # Pedestrian            Person
+    (  0, 128, 192): 12,    # Bicyclist             Rider
+    ( 64,   0, 128): 13,    # Car                   Car
+    ( 64, 128, 192): 255,   # SUVPickupTruck        Truck
+    (192, 128, 192): 255,   # Truck_Bus             Bus
+    (192,  64, 128): 255,   # Train                 Train
+    (192,   0, 192): 255,   # MotorcycleScooter     Motorcycle
+    (  0,   0,   0): 255,   # Void                  Void
+
+    (192, 192,   0): 255,   # VegetationMisc        Vegetation
+    (192, 128,  64): 255,   # Child                 Person
+
+    (  0, 128,  64): 255,   # Bridge                Bridge
+    ( 64,   0,  64): 255,   # Tunnel                Tunnel
+
+    (192,   0, 128): 255,   # Archway
+    ( 64, 192, 128): 255,   # ParkingBlock
+    (  0,   0,  64): 255,   # TrafficCone
+    (128, 128,  64): 255,   # Misc_Text
+    (128,   0, 192): 255,   # LaneMkgsDriv
+    (128, 128, 192): 255,   # RoadShoulder
+    (192,   0,  64): 255,   # LaneMkgsNonDriv
+    ( 64, 128,  64): 255,   # Animal
+    ( 64,   0, 192): 255,   # CartLuggagePram
+    (128,  64,  64): 255,   # OtherMoving
+}
+
+def quantize(label, codes):
+    result = np.ndarray(shape=label.shape[:2], dtype=int)
+    result[:, :] = 255
+    for rgb, idx in codes.items():
+        result[(label==rgb).all(2)] = idx
+    return result
+
 # TODO: This two functions should be merged with individual data loader
 def get_image(roidb, config):
     """
@@ -43,21 +88,15 @@ def get_ref_im(seg_rec, config):
 
     eq_flag = 0 # 0 for unequal, 1 for equal
 
-    prefix = ''
-    suffix = ''
-    if seg_rec['flipped']:
-        prefix = seg_rec['image'][:-len('000019_leftImg8bit_flip.png')]
-        suffix = seg_rec['image'][-len('000019_leftImg8bit_flip.png'):]
-    else:
-        prefix = seg_rec['image'][:-len('000019_leftImg8bit.png')]
-        suffix = seg_rec['image'][-len('000019_leftImg8bit.png'):]
+    prefix = seg_rec['image'][:-len('01170.png')]
+    suffix = seg_rec['image'][-len('01170.png'):]
 
-    frame_id = int(suffix[:len('000019')])
+    frame_id = int(suffix[:len('01170')])
     ref_id = max(frame_id + np.random.randint(config.TRAIN.MIN_OFFSET, config.TRAIN.MAX_OFFSET+1), 0)
     # print 'frame id: {}\n ref id: {}'.format(frame_id, ref_id)
 
-    prefix = prefix[len('./data/cityscapes/leftImg8bit/'):]
-    ref_im_name = '/city/leftImg8bit_sequence/' + prefix + ('%06d' % ref_id) + '_leftImg8bit.png'
+    prefix = prefix[len('./data/CamVid/images/train/'):]
+    ref_im_name = './data/CamVid/data-' + prefix + ('%05d' % ref_id) + '.png'
     # print seg_rec['image']
     # print ref_im_name
 
@@ -99,16 +138,18 @@ def get_segmentation_pair(segdb, config):
         target_size = config.SCALES[scale_ind][0]
         max_size = config.SCALES[scale_ind][1]
 
-        im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
-        ref_im, ref_im_scale = resize(ref_im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        # im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        # ref_im, ref_im_scale = resize(ref_im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        im_scale = 1.
         im_tensor = transform(im, config.network.PIXEL_MEANS)
         ref_im_tensor = transform(ref_im, config.network.PIXEL_MEANS)
         im_info = [im_tensor.shape[2], im_tensor.shape[3], im_scale]
         new_rec['im_info'] = im_info
 
         seg_cls_gt = np.array(Image.open(seg_rec['seg_cls_path']))
-        seg_cls_gt, seg_cls_gt_scale = resize(
-            seg_cls_gt, target_size, max_size, stride=config.network.IMAGE_STRIDE, interpolation=cv2.INTER_NEAREST)
+        seg_cls_gt = quantize(seg_cls_gt, codes)
+        # seg_cls_gt, seg_cls_gt_scale = resize(
+        #     seg_cls_gt, target_size, max_size, stride=config.network.IMAGE_STRIDE, interpolation=cv2.INTER_NEAREST)
         seg_cls_gt_tensor = transform_seg_gt(seg_cls_gt)
 
         processed_ims.append(im_tensor)

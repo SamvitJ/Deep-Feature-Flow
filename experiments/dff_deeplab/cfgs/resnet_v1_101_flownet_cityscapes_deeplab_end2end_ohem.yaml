@@ -2,7 +2,7 @@
 MXNET_VERSION: "mxnet"
 output_path: "./output/dff_deeplab/cityscapes"
 symbol: resnet_v1_101_flownet_deeplab
-gpus: '0,1,2,3'
+gpus: '0'
 SCALES:
 - 720
 - 960
@@ -11,7 +11,7 @@ default:
   kvstore: device
 network:
   pretrained: "./model/rfcn_dff_flownet_vid"
-  pretrained_flow: "./model/deeplab_cityscapes"
+  pretrained_flow: "./model/deeplab_dcn_cityscapes"
   pretrained_epoch: 0
   PIXEL_MEANS:
   - 103.06
@@ -38,20 +38,20 @@ network:
   - beta
 dataset:
   NUM_CLASSES: 19
-  dataset: CityScape
-  dataset_path: "./data/cityscapes"
-  image_set: leftImg8bit_train
+  dataset: CamVid
+  dataset_path: "./data/CamVid"
+  image_set: images_train
   root_path: "./data"
-  test_image_set: leftImg8bit_val
+  test_image_set: images_val
 TRAIN:
   warmup: true
   warmup_lr: 0.00005
   # typically we will use 4000 warmup step for single GPU
   warmup_step: 1000
   begin_epoch: 0
-  end_epoch: 53
+  end_epoch: 150
   lr: 0.0005
-  lr_step: '40.336'
+  lr_step: '150'
   model_prefix: "dff_deeplab_vid"
   # whether flip image
   FLIP: false
