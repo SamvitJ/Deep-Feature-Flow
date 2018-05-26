@@ -52,7 +52,9 @@ def fast_hist(pred, label, n):
         n * label[k].astype(int) + pred[k], minlength=n ** 2).reshape(n, n)
 
 def per_class_iu(hist):
-    return np.true_divide(np.diag(hist), (hist.sum(1) + hist.sum(0) - np.diag(hist)))
+    ius = np.true_divide(np.diag(hist), (hist.sum(1) + hist.sum(0) - np.diag(hist)))
+    ius = np.delete(ius, [3, 6, 9, 14, 15, 16, 17, 18])
+    return ius
 
 def getpallete(num_cls):
     """
@@ -153,7 +155,7 @@ def main():
     pprint.pprint(config)
     config.symbol = 'resnet_v1_101_flownet_deeplab'
     model1 = '/../model/rfcn_dff_flownet_vid'
-    model2 = '/../model/deeplab_dcn_cityscapes'
+    model2 = '/../model/deeplab_dcn_camvid'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
     key_sym = sym_instance.get_key_test_symbol(config)
     cur_sym = sym_instance.get_cur_test_symbol(config)
@@ -165,10 +167,12 @@ def main():
     start_num = args.start_num
 
     # load demo data
-    image_names = sorted(glob.glob(cur_path + '/../data/CamVid/data/*.png'))
+    image_names  = sorted(glob.glob(cur_path + '/../data/CamVid/images/val/Seq05VD/*.png'))
+    image_names += sorted(glob.glob(cur_path + '/../data/CamVid/images/val/0001TP/*.png'))
     image_names = image_names[start_num :]
     image_names = image_names[: interv * num_ex]
-    label_files = sorted(glob.glob(cur_path + '/../data/CamVid/labels/*.png'))
+    label_files  = sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/Seq05VD/*.png'))
+    label_files += sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/0001TP/*.png'))
 
     output_dir = cur_path + '/../demo/deeplab_dff/'
     if not os.path.exists(output_dir):
