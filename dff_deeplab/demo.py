@@ -178,7 +178,8 @@ def main():
     label_files = label_files[start_num :]
 
     output_dir = cur_path + '/../demo/deeplab_dff/'
-    mv_file = cur_path + '/../data/CamVid/camvid_01TP.pkl'
+    mv_files = [cur_path + '/../data/CamVid/camvid_Seq05VD.pkl',
+        cur_path + '/../data/CamVid/camvid_0001TP_2.pkl']
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     key_frame_interval = interv
@@ -204,9 +205,18 @@ def main():
     data = []
     key_im_tensor = None
     mv_tensor = None
-    mvs = pickle.load(open(mv_file, 'rb'))
-    mvs = np.transpose(mvs, (0, 3, 1, 2))
-    print "mvs.shape %s" % (mvs.shape,)
+
+    for idx, mv_file in enumerate(mv_files):
+        print 'mv file:', mv_file
+        mv_cam = pickle.load(open(mv_file, 'rb'))
+        mv_cam = np.transpose(mv_cam, (0, 3, 1, 2))
+        if idx == 0:
+            mvs = mv_cam
+        else:
+            mvs = np.concatenate((mvs, mv_cam), axis=0)
+        print "mvs.shape %s" % (mvs.shape,)
+
+    all_imgs = set1_images + set2_images
     for idx, im_name in enumerate(image_names):
         assert os.path.exists(im_name), ('%s does not exist'.format(im_name))
         im = cv2.imread(im_name, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
@@ -218,7 +228,8 @@ def main():
         im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
         if idx % key_frame_interval == 0:
             key_im_tensor = im_tensor
-        mv_tensor = np.negative(np.expand_dims(mvs[idx], axis=0) / 16.)
+        mv_idx = all_imgs.index(im_name)
+        mv_tensor = np.negative(np.expand_dims(mvs[mv_idx], axis=0) / 16.)
         data.append({'data': im_tensor, 'im_info': im_info, 'm_vec': mv_tensor, 'data_key': key_im_tensor, 'feat_prev': np.zeros((1,config.network.DFF_FEAT_DIM,1,1))})
 
 
