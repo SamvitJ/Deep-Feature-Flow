@@ -1319,9 +1319,9 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         num_anchors = cfg.network.NUM_ANCHORS
 
         data = mx.sym.Variable(name="data")
-        data_key = mx.sym.Variable(name="data_key")
-        feat_prev = mx.sym.Variable(name="feat_prev")
         m_vec = mx.sym.Variable(name="m_vec")
+        feat_forw = mx.sym.Variable(name="feat_forw")
+        feat_back = mx.sym.Variable(name="feat_back")
 
         # shared convolutional layers
         conv_feat = self.get_resnet_dcn(data)
@@ -1351,7 +1351,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
         #                                   ignore_label=255, name="softmax")
 
-        group = mx.sym.Group([data_key, feat_prev, m_vec, conv_feat, croped_score])
+        group = mx.sym.Group([m_vec, feat_forw, feat_back, conv_feat, croped_score])
         self.sym = group
         return group
 
@@ -1363,19 +1363,14 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         num_anchors = cfg.network.NUM_ANCHORS
 
         data_cur = mx.sym.Variable(name="data")
-        data_key = mx.sym.Variable(name="data_key")
-        conv_feat = mx.sym.Variable(name="feat_prev")
         m_vec = mx.sym.Variable(name="m_vec")
-
-        # conv_feat = self.get_resnet_v1(data_cur)
-
-        # feat_conv_3x3 = mx.sym.Convolution(
-        #     data=conv_feat, kernel=(3, 3), pad=(6, 6), dilate=(6, 6), num_filter=1024, name="feat_conv_3x3")
-        # conv_feat = mx.sym.Activation(data=feat_conv_3x3, act_type="relu", name="feat_conv_3x3_relu")
+        feat_forw = mx.sym.Variable(name="feat_forw")
+        feat_back = mx.sym.Variable(name="feat_back")
 
         # shared convolutional layers
-        m_vec_grid = mx.sym.GridGenerator(data=m_vec, transform_type='warp', name='m_vec_grid')
-        conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=m_vec_grid, name='warping_feat')
+        conv_feat = (feat_forw + feat_back)
+        # m_vec_grid = mx.sym.GridGenerator(data=m_vec, transform_type='warp', name='m_vec_grid')
+        # conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=m_vec_grid, name='warping_feat')
 
         # deeplab
         fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
@@ -1402,7 +1397,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
         #                                   ignore_label=255, name="softmax")
 
-        group = mx.sym.Group([data_key, conv_feat, croped_score])
+        group = mx.sym.Group([m_vec, conv_feat, croped_score])
         self.sym = group
         return group
 
