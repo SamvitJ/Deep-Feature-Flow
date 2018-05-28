@@ -239,7 +239,7 @@ def main():
             im_tensor = transform(im, config.network.PIXEL_MEANS)
             im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
             mv_idx = all_imgs.index(im_name)
-            mv_tensor = np.negative(np.expand_dims(mvs[mv_idx], axis=0) / 16.)
+            mv_tensor = np.expand_dims(mvs[mv_idx], axis=0) / 16.
             data.append({
                 'data': im_tensor,
                 'im_info': im_info,
