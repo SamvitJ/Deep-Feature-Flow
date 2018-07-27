@@ -172,8 +172,8 @@ def main():
     set1_images = set1_images[snip_len * start_num :]
     set2_images = sorted(glob.glob(cur_path + '/../data/CamVid/data-0001TP_2/*.png'))
 
-    label_files  = sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/Seq05VD/*.png'))[1: ]
-    label_files += sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/0001TP/*.png'))[1: ]
+    label_files  = sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/Seq05VD/*.png'))
+    label_files += sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/0001TP/*.png'))
     label_files = label_files[start_num :]
 
     output_dir = cur_path + '/../demo/deeplab_dff/'
@@ -186,14 +186,14 @@ def main():
     set1_ex = 171
     set2_ex = 62
     image_names_trunc = []
-    for i in range(1, min(num_ex, set1_ex - start_num)):
+    for i in range(min(num_ex, set1_ex - start_num)):
         snip_pos = i * snip_len
-        offset = interv - 1 # i % interv
+        offset = i % interv
         start_pos = lb_pos - offset
         image_names_trunc.extend(set1_images[snip_pos + start_pos : snip_pos + start_pos + interv])
-    for j in range(1, min(num_ex - (i+1), set2_ex)):
+    for j in range(min(num_ex - (i+1), set2_ex)):
         snip_pos = j * snip_len
-        offset = interv - 1 # j % interv
+        offset = j % interv
         start_pos = lb_pos - offset
         image_names_trunc.extend(set2_images[snip_pos + start_pos : snip_pos + start_pos + interv])
     image_names = image_names_trunc
