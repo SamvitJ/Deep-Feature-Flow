@@ -2259,46 +2259,46 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         # init._init_bilinear('upsample_weight', arg_params['upsampling_weight'])
 
         # Res-18 conv5
-        arg_params['18_res5a_branch1_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5a_branch1_weight'])
-        arg_params['18_bn5a_branch1_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5a_branch1_gamma'])
-        arg_params['18_bn5a_branch1_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5a_branch1_beta'])
+        # arg_params['18_res5a_branch1_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5a_branch1_weight'])
+        # arg_params['18_bn5a_branch1_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5a_branch1_gamma'])
+        # arg_params['18_bn5a_branch1_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5a_branch1_beta'])
 
-        aux_params['18_bn5a_branch1_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5a_branch1_moving_mean'])
-        aux_params['18_bn5a_branch1_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5a_branch1_moving_var'])
+        # aux_params['18_bn5a_branch1_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5a_branch1_moving_mean'])
+        # aux_params['18_bn5a_branch1_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5a_branch1_moving_var'])
 
-        # unit 1
-        arg_params['18_res5a_branch2a_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5a_branch2a_weight'])
-        arg_params['18_bn5a_branch2a_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5a_branch2a_gamma'])
-        arg_params['18_bn5a_branch2a_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5a_branch2a_beta'])
+        # # unit 1
+        # arg_params['18_res5a_branch2a_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5a_branch2a_weight'])
+        # arg_params['18_bn5a_branch2a_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5a_branch2a_gamma'])
+        # arg_params['18_bn5a_branch2a_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5a_branch2a_beta'])
 
-        aux_params['18_bn5a_branch2a_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5a_branch2a_moving_mean'])
-        aux_params['18_bn5a_branch2a_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5a_branch2a_moving_var'])
+        # aux_params['18_bn5a_branch2a_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5a_branch2a_moving_mean'])
+        # aux_params['18_bn5a_branch2a_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5a_branch2a_moving_var'])
 
-        arg_params['18_res5a_branch2b_offset_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['18_res5a_branch2b_offset_weight'])
-        arg_params['18_res5a_branch2b_offset_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['18_res5a_branch2b_offset_bias'])
-        arg_params['18_res5a_branch2b_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5a_branch2b_weight'])
-        arg_params['18_bn5a_branch2b_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5a_branch2b_gamma'])
-        arg_params['18_bn5a_branch2b_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5a_branch2b_beta'])
+        # arg_params['18_res5a_branch2b_offset_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['18_res5a_branch2b_offset_weight'])
+        # arg_params['18_res5a_branch2b_offset_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['18_res5a_branch2b_offset_bias'])
+        # arg_params['18_res5a_branch2b_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5a_branch2b_weight'])
+        # arg_params['18_bn5a_branch2b_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5a_branch2b_gamma'])
+        # arg_params['18_bn5a_branch2b_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5a_branch2b_beta'])
 
-        aux_params['18_bn5a_branch2b_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5a_branch2b_moving_mean'])
-        aux_params['18_bn5a_branch2b_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5a_branch2b_moving_var'])
+        # aux_params['18_bn5a_branch2b_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5a_branch2b_moving_mean'])
+        # aux_params['18_bn5a_branch2b_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5a_branch2b_moving_var'])
 
-        # unit 2
-        arg_params['18_res5b_branch2a_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5b_branch2a_weight'])
-        arg_params['18_bn5b_branch2a_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5b_branch2a_gamma'])
-        arg_params['18_bn5b_branch2a_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5b_branch2a_beta'])
+        # # unit 2
+        # arg_params['18_res5b_branch2a_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5b_branch2a_weight'])
+        # arg_params['18_bn5b_branch2a_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5b_branch2a_gamma'])
+        # arg_params['18_bn5b_branch2a_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5b_branch2a_beta'])
 
-        aux_params['18_bn5b_branch2a_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5b_branch2a_moving_mean'])
-        aux_params['18_bn5b_branch2a_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5b_branch2a_moving_var'])
+        # aux_params['18_bn5b_branch2a_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5b_branch2a_moving_mean'])
+        # aux_params['18_bn5b_branch2a_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5b_branch2a_moving_var'])
 
-        arg_params['18_res5b_branch2b_offset_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['18_res5b_branch2b_offset_weight'])
-        arg_params['18_res5b_branch2b_offset_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['18_res5b_branch2b_offset_bias'])
-        arg_params['18_res5b_branch2b_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5b_branch2b_weight'])
-        arg_params['18_bn5b_branch2b_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5b_branch2b_gamma'])
-        arg_params['18_bn5b_branch2b_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5b_branch2b_beta'])
+        # arg_params['18_res5b_branch2b_offset_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['18_res5b_branch2b_offset_weight'])
+        # arg_params['18_res5b_branch2b_offset_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['18_res5b_branch2b_offset_bias'])
+        # arg_params['18_res5b_branch2b_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['18_res5b_branch2b_weight'])
+        # arg_params['18_bn5b_branch2b_gamma'] = mx.nd.ones(shape=self.arg_shape_dict['18_bn5b_branch2b_gamma'])
+        # arg_params['18_bn5b_branch2b_beta'] = mx.nd.zeros(shape=self.arg_shape_dict['18_bn5b_branch2b_beta'])
 
-        aux_params['18_bn5b_branch2b_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5b_branch2b_moving_mean'])
-        aux_params['18_bn5b_branch2b_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5b_branch2b_moving_var'])
+        # aux_params['18_bn5b_branch2b_moving_mean'] = mx.nd.zeros(shape=self.aux_shape_dict['18_bn5b_branch2b_moving_mean'])
+        # aux_params['18_bn5b_branch2b_moving_var'] = mx.nd.ones(shape=self.aux_shape_dict['18_bn5b_branch2b_moving_var'])
 
         # Res-18 task (v2)
         arg_params['18_feat_upsampling_weight'] = arg_params['18_feat_upsampling_weight']
