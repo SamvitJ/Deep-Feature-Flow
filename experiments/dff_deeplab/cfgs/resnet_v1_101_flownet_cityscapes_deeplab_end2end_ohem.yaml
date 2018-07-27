@@ -4,8 +4,8 @@ output_path: "./output/dff_deeplab/cityscapes"
 symbol: resnet_v1_101_flownet_deeplab
 gpus: '0'
 SCALES:
-- 1024
-- 2048
+- 720
+- 960
 default:
   frequent: 100
   kvstore: device
@@ -77,20 +77,20 @@ network:
   - beta
 dataset:
   NUM_CLASSES: 19
-  dataset: CityScape
-  dataset_path: "./data/cityscapes"
-  image_set: leftImg8bit_train
+  dataset: CamVid
+  dataset_path: "./data/CamVid"
+  image_set: images_train
   root_path: "./data"
-  test_image_set: leftImg8bit_val
+  test_image_set: images_val
 TRAIN:
   warmup: true
   warmup_lr: 0.00005
   # typically we will use 4000 warmup step for single GPU
   warmup_step: 1000
   begin_epoch: 0
-  end_epoch: 100
+  end_epoch: 150
   lr: 0.0005
-  lr_step: '100'
+  lr_step: '150'
   model_prefix: "dff_deeplab_vid"
   # whether flip image
   FLIP: false
@@ -101,8 +101,8 @@ TRAIN:
   # wheter crop image during training
   ENABLE_CROP: True
   # scale of cropped image during training
-  CROP_HEIGHT: 768
-  CROP_WIDTH: 1024
+  CROP_HEIGHT: 720
+  CROP_WIDTH: 960
   # whether resume training
   RESUME: false
   # whether shuffle image
