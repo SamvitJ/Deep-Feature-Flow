@@ -1,6 +1,6 @@
 ---
 MXNET_VERSION: "mxnet"
-output_path: "./output/dff_deeplab/cityscapes"
+output_path: "./output/dff_deeplab/camvid"
 symbol: resnet_v1_101_flownet_deeplab
 gpus: '0'
 SCALES:
@@ -11,7 +11,7 @@ default:
   kvstore: device
 network:
   pretrained: "./model/rfcn_dff_flownet_vid"
-  pretrained_flow: "./model/deeplab_dcn_cityscapes"
+  pretrained_flow: "./model/deeplab_dcn_camvid"
   pretrained_ec: "./model/trained/resnet-34s-0114"
   pretrained_epoch: 0
   PIXEL_MEANS:
