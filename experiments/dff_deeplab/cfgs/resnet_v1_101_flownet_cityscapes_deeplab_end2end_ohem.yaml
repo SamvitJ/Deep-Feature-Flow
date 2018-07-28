@@ -2,7 +2,7 @@
 MXNET_VERSION: "mxnet"
 output_path: "./output/dff_deeplab/cityscapes"
 symbol: resnet_v1_101_flownet_deeplab
-gpus: '0,1,2,3,4,5,6,7'
+gpus: '0'
 SCALES:
 - 1024
 - 2048
@@ -12,7 +12,7 @@ default:
 network:
   pretrained: "./model/rfcn_dff_flownet_vid"
   pretrained_flow: "./model/deeplab_dcn_cityscapes"
-  pretrained_ec: "./model/trained/resnet-18" # "./model/trained/resnet-50"
+  pretrained_ec: "./model/trained/resnet-50"
   pretrained_epoch: 0
   PIXEL_MEANS:
   - 103.06
