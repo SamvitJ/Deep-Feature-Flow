@@ -36,13 +36,13 @@ config.network.DFF_FEAT_DIM = 2048
 
 # dataset related params
 config.dataset = edict()
-config.dataset.dataset = 'CityScape'
-config.dataset.image_set = 'leftImg8bit_train'
-config.dataset.test_image_set = 'leftImg8bit_val'
+config.dataset.dataset = 'CamVid'
+config.dataset.image_set = 'images_train'
+config.dataset.test_image_set = 'images_val'
 config.dataset.root_path = '../data'
-config.dataset.dataset_path = '../data/cityscapes'
+config.dataset.dataset_path = '../data/CamVid'
 config.dataset.NUM_CLASSES = 19
-config.dataset.annotation_prefix = 'gtFine'
+config.dataset.annotation_prefix = 'labels'
 
 
 config.TRAIN = edict()
