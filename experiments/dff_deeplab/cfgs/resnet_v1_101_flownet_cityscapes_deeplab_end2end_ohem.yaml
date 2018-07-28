@@ -33,12 +33,24 @@ network:
   - bn4
   - res5
   - bn5
+  # res-50 feat
+  - 50_conv1
+  - 50_bn_conv1
+  - 50_res2
+  - 50_bn2
+  - 50_gamma
+  - 50_beta
+  # res-50 feat
+  - 50_res3
+  - 50_bn3
+  - 50_res4
+  - 50_bn4
+  # - 50_res5
+  # - 50_bn5
   # task
   - fc6
   - score
   - upsampling
-  # res-18
-  - "18_"
   # flow
   - ReLU
   - flow_conv1

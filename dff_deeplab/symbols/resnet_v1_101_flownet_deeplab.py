@@ -1726,33 +1726,33 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         eq_flag = mx.sym.Variable(name="eq_flag")
         seg_cls_gt = mx.symbol.Variable(name='label')
 
-        # conv_feat = self.get_resnet_dcn_50(data)
-        conv_feat = self.resnet(data_sym=data, prefix="18_", units=[2, 2, 2, 2], num_stages=4,
-            filter_list=[64, 64, 128, 256, 512], num_classes=1000, data_type="imagenet",
-            bottle_neck=False, bn_mom=0.9, workspace=512, memonger=False)
+        # features
+        conv_feat = self.get_resnet_dcn_50(data)
 
-        # subsequent fc layers by haozhi
-        fc6_bias = mx.symbol.Variable('18_fc6_bias', lr_mult=2.0)
-        fc6_weight = mx.symbol.Variable('18_fc6_weight', lr_mult=1.0)
+        # deeplab
+        fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
+        fc6_weight = mx.symbol.Variable('fc6_weight', lr_mult=1.0)
 
-        fc6 = mx.symbol.Convolution(data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="18_fc6",
-                                    bias=fc6_bias, weight=fc6_weight, workspace=self.workspace)
-        relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='18_relu_fc6')
+        fc6 = mx.symbol.Convolution(
+            data=conv_feat, kernel=(1, 1), pad=(0, 0), num_filter=1024, name="fc6", bias=fc6_bias, weight=fc6_weight,
+            workspace=self.workspace)
+        relu_fc6 = mx.sym.Activation(data=fc6, act_type='relu', name='relu_fc6')
 
-        score_bias = mx.symbol.Variable('18_score_bias', lr_mult=2.0)
-        score_weight = mx.symbol.Variable('18_score_weight', lr_mult=1.0)
+        score_bias = mx.symbol.Variable('score_bias', lr_mult=2.0)
+        score_weight = mx.symbol.Variable('score_weight', lr_mult=1.0)
 
-        score = mx.symbol.Convolution(data=relu_fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="18_score",
-                                      bias=score_bias, weight=score_weight, workspace=self.workspace)
+        score = mx.symbol.Convolution(
+            data=relu_fc6, kernel=(1, 1), pad=(0, 0), num_filter=num_classes, name="score", bias=score_bias,
+            weight=score_weight, workspace=self.workspace)
 
-        upsampling = mx.symbol.Deconvolution(data=score, num_filter=num_classes, kernel=(64, 64), stride=(32, 32),
-                                             num_group=num_classes, no_bias=True, name='18_upsampling',
-                                             attr={'lr_mult': '0.0'}, workspace=self.workspace)
+        upsampling = mx.symbol.Deconvolution(
+            data=score, num_filter=num_classes, kernel=(32, 32), stride=(16, 16), num_group=num_classes, no_bias=True,
+            name='upsampling', attr={'lr_mult': '0.0'}, workspace=self.workspace)
 
-        croped_score = mx.symbol.Crop(*[upsampling, data], offset=(8, 8), name='18_croped_score')
+        croped_score = mx.symbol.Crop(*[upsampling, data], offset=(8, 8), name='croped_score')
 
         softmax = mx.symbol.SoftmaxOutput(data=croped_score, label=seg_cls_gt, normalization='valid', multi_output=True,
-                                          use_ignore=True, ignore_label=255, name="18_softmax")
+                                          use_ignore=True, ignore_label=255, name="softmax")
 
         group = mx.sym.Group([softmax, data_ref, eq_flag])
         self.sym = group
@@ -2199,6 +2199,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         return group
 
     def init_weight(self, cfg, arg_params, aux_params):
+        pass
         # arg_params['fc6_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['fc6_weight'])
         # arg_params['fc6_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['fc6_bias'])
         # arg_params['score_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['score_weight'])
@@ -2215,8 +2216,8 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         # arg_params['pre_conv_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['pre_conv_weight'])
         # arg_params['pre_conv_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['pre_conv_bias'])
         # arg_params['curr_upsampling_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['curr_upsampling_weight'])
-        arg_params['corr_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['corr_weight'])
-        arg_params['corr_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['corr_bias'])
+        # arg_params['corr_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['corr_weight'])
+        # arg_params['corr_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['corr_bias'])
 
         # # 3x3 conv init
         # conv_shape = self.arg_shape_dict['corr_weight']
