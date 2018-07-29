@@ -18,6 +18,7 @@ from config.config import config, update_config
 from utils.image import resize, transform
 from PIL import Image
 import numpy as np
+import re
 
 # get config
 os.environ['PYTHONUNBUFFERED'] = '1'
@@ -35,20 +36,15 @@ from utils.show_boxes import show_boxes, draw_boxes
 from utils.tictoc import tic, toc
 from nms.nms import py_nms_wrapper, cpu_nms_wrapper, gpu_nms_wrapper
 
-ref_img_prefix = 'frankfurt_000000_000294'
-ref_pred_prefix = 'seg_frankfurt_000000_012000'
-
 def parse_args():
     parser = argparse.ArgumentParser(description='Show Deep Feature Flow demo')
     parser.add_argument('-i', '--interval', type=int, default=1)
     parser.add_argument('-e', '--num_ex', type=int, default=10)
+    parser.add_argument('-s', '--start_num', type=int, default=0)
     parser.add_argument('-m', '--model_num', type=int, default=0)
     parser.add_argument('-mname', '--model_name', type=str, default='')
     parser.add_argument('--avg', dest='avg_acc', action='store_true')
-    parser.add_argument('--gt', dest='has_gt', action='store_true')
-    parser.add_argument('--no_gt', dest='has_gt', action='store_false')
     parser.set_defaults(avg_acc=False)
-    parser.set_defaults(has_gt=True)
     args = parser.parse_args()
     return args
 
@@ -60,16 +56,9 @@ def fast_hist(pred, label, n):
         n * label[k].astype(int) + pred[k], minlength=n ** 2).reshape(n, n)
 
 def per_class_iu(hist):
-    return np.true_divide(np.diag(hist), (hist.sum(1) + hist.sum(0) - np.diag(hist)))
-
-def get_label_if_available(label_files, im_filename):
-    for lb_file in label_files:
-        _, lb_filename = os.path.split(lb_file)
-        lb_filename = lb_filename[:len(ref_img_prefix)]
-        if im_filename.startswith(lb_filename):
-            print 'label {}'.format(lb_filename)
-            return lb_file
-    return None
+    ius = np.true_divide(np.diag(hist), (hist.sum(1) + hist.sum(0) - np.diag(hist)))
+    ius = np.delete(ius, [3, 6, 9, 14, 15, 16, 17, 18])
+    return ius
 
 def getpallete(num_cls):
     """
@@ -83,33 +72,33 @@ def getpallete(num_cls):
 
     pallete_raw[6, :] =  [111,  74,   0]
     pallete_raw[7, :] =  [ 81,   0,  81]
-    pallete_raw[8, :] =  [128,  64, 128]
-    pallete_raw[9, :] =  [244,  35, 232]
+    pallete_raw[8, :] =  [128,  64, 128] # [128,  64, 128]  # Road
+    pallete_raw[9, :] =  [  0,   0, 192] # [244,  35, 232]  # Sidewalk
     pallete_raw[10, :] =  [250, 170, 160]
     pallete_raw[11, :] = [230, 150, 140]
-    pallete_raw[12, :] = [ 70,  70,  70]
-    pallete_raw[13, :] = [102, 102, 156]
-    pallete_raw[14, :] = [190, 153, 153]
+    pallete_raw[12, :] = [128,   0,   0] # [ 70,  70,  70]  # Building
+    pallete_raw[13, :] = [ 64, 192,   0] # [102, 102, 156]  # Wall
+    pallete_raw[14, :] = [64,   64, 128] # [190, 153, 153]  # Fence
     pallete_raw[15, :] = [180, 165, 180]
     pallete_raw[16, :] = [150, 100, 100]
     pallete_raw[17, :] = [150, 120,  90]
-    pallete_raw[18, :] = [153, 153, 153]
+    pallete_raw[18, :] = [192, 192, 128] # [153, 153, 153]  # Pole
     pallete_raw[19, :] = [153, 153, 153]
-    pallete_raw[20, :] = [250, 170,  30]
-    pallete_raw[21, :] = [220, 220,   0]
-    pallete_raw[22, :] = [107, 142,  35]
-    pallete_raw[23, :] = [152, 251, 152]
-    pallete_raw[24, :] = [ 70, 130, 180]
-    pallete_raw[25, :] = [220,  20,  60]
-    pallete_raw[26, :] = [255,   0,   0]
-    pallete_raw[27, :] = [  0,   0, 142]
-    pallete_raw[28, :] = [  0,   0,  70]
-    pallete_raw[29, :] = [  0,  60, 100]
+    pallete_raw[20, :] = [  0,  64,  64] # [250, 170,  30]  # Traffic Light
+    pallete_raw[21, :] = [192, 128, 128] # [220, 220,   0]  # Traffic Sign
+    pallete_raw[22, :] = [128, 128,   0] # [107, 142,  35]  # Tree / Vegetation
+    pallete_raw[23, :] = [  0, 128,   0] # [152, 251, 152]  # Grass / Terrain
+    pallete_raw[24, :] = [128, 128, 128] # [ 70, 130, 180]  # Sky
+    pallete_raw[25, :] = [64,   64,   0] # [220,  20,  60]  # Person
+    pallete_raw[26, :] = [  0, 128, 192] # [255,   0,   0]  # Rider
+    pallete_raw[27, :] = [ 64,   0, 128] # [  0,   0, 142]  # Car
+    pallete_raw[28, :] = [ 64, 128, 192] # [  0,   0,  70]  # Truck
+    pallete_raw[29, :] = [192, 128, 192] # [  0,  60, 100]  # Bus
     pallete_raw[30, :] = [  0,   0,  90]
     pallete_raw[31, :] = [  0,   0, 110]
-    pallete_raw[32, :] = [  0,  80, 100]
-    pallete_raw[33, :] = [  0,   0, 230]
-    pallete_raw[34, :] = [119,  11,  32]
+    pallete_raw[32, :] = [192,  64, 128] # [  0,  80, 100]  # Train
+    pallete_raw[33, :] = [192,   0, 192] # [  0,   0, 230]  # Motorcycle
+    pallete_raw[34, :] = [  0,   0,   0] # [119,  11,  32]  # Bicycle
 
     train2regular = [7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33]
 
@@ -120,14 +109,60 @@ def getpallete(num_cls):
 
     return pallete
 
+codes = {                   # CamVid                # Cityscapes
+    (128,  64, 128): 0,     # Road                  Road
+    (  0,   0, 192): 1,     # Sidewalk              Sidewalk
+    (128,   0,   0): 2,     # Building              Building
+    ( 64, 192,   0): 255,   # Wall                  Wall
+    ( 64,  64, 128): 4,     # Fence                 Fence
+    (192, 192, 128): 5,     # Column_Pole           Pole
+    (  0,  64,  64): 255,   # TrafficLight          Traffic Light
+    (192, 128, 128): 7,     # SignSymbol            Traffic Sign
+    (128, 128,   0): 8,     # Tree                  Vegetation
+    (128, 128, 128): 10,    # Sky                   Sky
+    ( 64,  64,   0): 11,    # Pedestrian            Person
+    (  0, 128, 192): 12,    # Bicyclist             Rider
+    ( 64,   0, 128): 13,    # Car                   Car
+    ( 64, 128, 192): 255,   # SUVPickupTruck        Truck
+    (192, 128, 192): 255,   # Truck_Bus             Bus
+    (192,  64, 128): 255,   # Train                 Train
+    (192,   0, 192): 255,   # MotorcycleScooter     Motorcycle
+    (  0,   0,   0): 255,   # Void                  Void
+
+    (192, 192,   0): 255,   # VegetationMisc        Vegetation
+    (192, 128,  64): 255,   # Child                 Person
+
+    (  0, 128,  64): 255,   # Bridge                Bridge
+    ( 64,   0,  64): 255,   # Tunnel                Tunnel
+
+    (192,   0, 128): 255,   # Archway
+    ( 64, 192, 128): 255,   # ParkingBlock
+    (  0,   0,  64): 255,   # TrafficCone
+    (128, 128,  64): 255,   # Misc_Text
+    (128,   0, 192): 255,   # LaneMkgsDriv
+    (128, 128, 192): 255,   # RoadShoulder
+    (192,   0,  64): 255,   # LaneMkgsNonDriv
+    ( 64, 128,  64): 255,   # Animal
+    ( 64,   0, 192): 255,   # CartLuggagePram
+    (128,  64,  64): 255,   # OtherMoving
+}
+
+def quantize(label, codes):
+    result = np.ndarray(shape=label.shape[:2], dtype=int)
+    result[:, :] = 255
+    for rgb, idx in codes.items():
+        result[(label==rgb).all(2)] = idx
+    return result
+
 def main():
 
     # settings
     num_classes = 19
     snip_len = 30
-    has_gt = args.has_gt
     interv = args.interval
     num_ex = args.num_ex
+    start_num = args.start_num
+
     model_num = args.model_num
     model_name = args.model_name
     avg_acc = args.avg_acc
@@ -136,41 +171,42 @@ def main():
     pprint.pprint(config)
     config.symbol = 'resnet_v1_101_flownet_deeplab'
     model1 = '/../model/rfcn_dff_flownet_vid'
-    # model2 = '/../model/deeplab_dcn_cityscapes'
-    model2 = '/../output/dff_deeplab/cityscapes/resnet_v1_101_flownet_cityscapes_deeplab_end2end_ohem/leftImg8bit_train/' + model_name + '/dff_deeplab_vid'
+    model2 = '/../model/trained/accel-cv-res34s'
     sym_instance = eval(config.symbol + '.' + config.symbol)()
     key_sym = sym_instance.get_key_test_symbol(config)
     cur_sym = sym_instance.get_cur_test_symbol(config)
 
     # load demo data
-    if has_gt:
-        image_names  = sorted(glob.glob('/city/leftImg8bit_sequence/val/frankfurt/*.png'))
-        image_names += sorted(glob.glob('/city/leftImg8bit_sequence/val/lindau/*.png'))
-        image_names += sorted(glob.glob('/city/leftImg8bit_sequence/val/munster/*.png'))
-        image_names = image_names[: snip_len * num_ex]
-        label_files  = sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/frankfurt/*trainIds.png'))
-        label_files += sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/lindau/*trainIds.png'))
-        label_files += sorted(glob.glob(cur_path + '/../data/cityscapes/gtFine/val/munster/*trainIds.png'))
-    else:
-        image_names = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt/*.png'))
-        label_files = sorted(glob.glob(cur_path + '/../demo/cityscapes_frankfurt_preds/*.png'))
+    set1_images = sorted(glob.glob(cur_path + '/../data/CamVid/data-Seq05VD/*.png'))
+    set1_images = set1_images[snip_len * start_num :]
+    set2_images = sorted(glob.glob(cur_path + '/../data/CamVid/data-0001TP_2/*.png'))
+
+    label_files  = sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/Seq05VD/*.png'))
+    label_files += sorted(glob.glob(cur_path + '/../data/CamVid/labels/val/0001TP/*.png'))
+    label_files = label_files[start_num :]
+
     output_dir = cur_path + '/../demo/deeplab_dff/'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     key_frame_interval = interv
 
     #
-    lb_pos = 19
+    lb_pos = 0
+    set1_ex = 171
+    set2_ex = 62
     image_names_trunc = []
-    for i in range(num_ex):
+    for i in range(min(num_ex, set1_ex - start_num)):
         snip_pos = i * snip_len
-        if avg_acc:
-            offset = i % interv
-        else:
-            offset = interv - 1
+        offset = i % interv
         start_pos = lb_pos - offset
-        image_names_trunc.extend(image_names[snip_pos + start_pos : snip_pos + start_pos + interv])
+        image_names_trunc.extend(set1_images[snip_pos + start_pos : snip_pos + start_pos + interv])
+    for j in range(min(num_ex - (i+1), set2_ex)):
+        snip_pos = j * snip_len
+        offset = j % interv
+        start_pos = lb_pos - offset
+        image_names_trunc.extend(set2_images[snip_pos + start_pos : snip_pos + start_pos + interv])
     image_names = image_names_trunc
+    # print 'len', len(image_names)
 
     data = []
     key_im_tensor = None
@@ -180,7 +216,8 @@ def main():
         im = cv2.imread(im_name, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
         target_size = config.SCALES[0][0]
         max_size = config.SCALES[0][1]
-        im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        # im, im_scale = resize(im, target_size, max_size, stride=config.network.IMAGE_STRIDE)
+        im_scale = 1.
         im_tensor = transform(im, config.network.PIXEL_MEANS)
         im_info = np.array([[im_tensor.shape[2], im_tensor.shape[3], im_scale]], dtype=np.float32)
         if idx % key_frame_interval == 0:
@@ -215,7 +252,7 @@ def main():
     nms = gpu_nms_wrapper(config.TEST.NMS, 0)
 
     # warm up
-    for j in xrange(2):
+    for j in xrange(min(interv, 2)):
         data_batch = mx.io.DataBatch(data=[data[j]], label=[], pad=0, index=0,
                                      provide_data=[[(k, v.shape) for k, v in zip(data_names, data[j])]],
                                      provide_label=[None])
@@ -270,20 +307,17 @@ def main():
         segmentation_result.save(output_dir + '/seg_' + im_filename)
 
         label = None
-        if has_gt:
-            # if annotation available for frame
-            _, lb_filename = os.path.split(label_files[lb_idx])
-            im_comps = im_filename.split('_')
-            lb_comps = lb_filename.split('_')
-            if im_comps[1] == lb_comps[1] and im_comps[2] == lb_comps[2]:
-                print 'label {}'.format(lb_filename)
-                label = np.asarray(Image.open(label_files[lb_idx]))
-                if lb_idx < len(label_files) - 1:
-                    lb_idx += 1
-        else:
-            _, lb_filename = os.path.split(label_files[idx])
-            print 'label {}'.format(lb_filename[:len(ref_pred_prefix)])
-            label = np.asarray(Image.open(label_files[idx]))
+
+        _, lb_filename = os.path.split(label_files[lb_idx])
+        im_comps = re.split('[_.]', im_filename)
+        lb_comps = re.split('[_.]', lb_filename)
+        # if annotation available for frame
+        if im_comps[0] == lb_comps[0] and im_comps[1] == lb_comps[1]:
+            print 'label {}'.format(lb_filename)
+            label = np.asarray(Image.open(label_files[lb_idx]))
+            label = quantize(label, codes)
+            if lb_idx < len(label_files) - 1:
+                lb_idx += 1
 
         if label is not None:
             curr_hist = fast_hist(pred.flatten(), label.flatten(), num_classes)
