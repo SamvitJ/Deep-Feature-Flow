@@ -1855,8 +1855,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
 
         data = mx.sym.Variable(name="data")
         data_key = mx.sym.Variable(name="data_key")
-        feat_prev = mx.sym.Variable(name="feat_prev")
-        m_vec = mx.sym.Variable(name="m_vec")
+        feat_key = mx.sym.Variable(name="feat_key")
 
         # shared convolutional layers
         conv_feat = self.get_resnet_dcn(data)
@@ -1886,7 +1885,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
         #                                   ignore_label=255, name="softmax")
 
-        group = mx.sym.Group([data_key, feat_prev, m_vec, conv_feat, croped_score])
+        group = mx.sym.Group([data_key, feat_key, conv_feat, croped_score])
         self.sym = group
         return group
 
@@ -1899,12 +1898,13 @@ class resnet_v1_101_flownet_deeplab(Symbol):
 
         data_cur = mx.sym.Variable(name="data")
         data_key = mx.sym.Variable(name="data_key")
-        conv_feat = mx.sym.Variable(name="feat_prev")
-        m_vec = mx.sym.Variable(name="m_vec")
+        conv_feat = mx.sym.Variable(name="feat_key")
 
         # warp features
-        m_vec_grid = mx.sym.GridGenerator(data=m_vec, transform_type='warp', name='m_vec_grid')
-        conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=m_vec_grid, name='warping_feat')
+        flow, scale_map = self.get_flownet(data_cur, data_key)
+        flow_grid = mx.sym.GridGenerator(data=flow, transform_type='warp', name='flow_grid')
+        conv_feat = mx.sym.BilinearSampler(data=conv_feat, grid=flow_grid, name='warping_feat')
+        # conv_feat = conv_feat * scale_map
 
         # L branch
         fc6_bias = mx.symbol.Variable('fc6_bias', lr_mult=2.0)
@@ -1963,7 +1963,7 @@ class resnet_v1_101_flownet_deeplab(Symbol):
         # softmax = mx.symbol.SoftmaxOutput(data=croped_score, normalization='valid', multi_output=True, use_ignore=True,
         #                                   ignore_label=255, name="softmax")
 
-        group = mx.sym.Group([m_vec, m_vec_grid, data_key, conv_feat, correction])
+        group = mx.sym.Group([data_key, conv_feat, correction])
         self.sym = group
         return group
 
