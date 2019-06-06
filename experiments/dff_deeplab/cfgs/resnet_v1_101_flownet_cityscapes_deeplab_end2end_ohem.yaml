@@ -12,7 +12,7 @@ default:
 network:
   pretrained: "./model/rfcn_dff_flownet_vid"
   pretrained_flow: "./model/deeplab_dcn_cityscapes"
-  pretrained_ec: "./model/trained/resnet-18*-0092"
+  pretrained_ec: "./model/trained/resnet-18s-0092"
   pretrained_epoch: 0
   PIXEL_MEANS:
   - 103.06
